@@ -8,6 +8,58 @@ set "PROJECT_DIR=%~dp0"
 set "BAT_PATH=%PROJECT_DIR%dlp_server.bat"
 set "STARTUP_FOLDER=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
 
+echo ============================================
+echo        DLP Server - First Time Setup
+echo ============================================
+echo.
+
+echo [1/6] Checking Git installation...
+where git >nul 2>&1
+if %errorlevel% equ 0 (
+    echo        Git found.
+    goto :gitReady
+)
+echo        Git not found. Installing...
+
+:: Try winget first (available on Win 10 1809+ / Win 11)
+where winget >nul 2>&1
+if %errorlevel% equ 0 (
+    echo        Installing via winget...
+    winget install --id Git.Git -e --source winget -h --accept-package-agreements --accept-source-agreements
+    if !errorlevel! equ 0 (
+        echo        SUCCESS: Git installed via winget.
+        :: Refresh PATH for this session
+        set "PATH=%ProgramFiles%\Git\cmd;%PATH%"
+        goto :gitReady
+    )
+    echo        winget install failed. Trying manual download...
+)
+
+:: Fallback: download the official installer and run silently
+set "GIT_INSTALLER=%TEMP%\git-installer.exe"
+echo        Downloading Git for Windows...
+powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://github.com/git-for-windows/git/releases/download/v2.49.0.windows.1/Git-2.49.0-64-bit.exe' -OutFile '%GIT_INSTALLER%' -UseBasicParsing"
+if !errorlevel! neq 0 (
+    echo [ERROR] Failed to download Git. Please install Git manually:
+    echo         https://git-scm.com/download/win
+    pause
+    exit /b 1
+)
+echo        Installing Git silently...
+"%GIT_INSTALLER%" /VERYSILENT /NORESTART /NOCANCEL /SP- /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS /COMPONENTS="icons,ext\reg\shellhere,assoc,assoc_sh"
+if !errorlevel! neq 0 (
+    echo [ERROR] Git installation failed. Please install Git manually:
+    echo         https://git-scm.com/download/win
+    del /f /q "%GIT_INSTALLER%" >nul 2>&1
+    pause
+    exit /b 1
+)
+set "PATH=%ProgramFiles%\Git\cmd;%PATH%"
+del /f /q "%GIT_INSTALLER%" >nul 2>&1
+echo        SUCCESS: Git installed.
+
+:gitReady
+
 :: Restore missing tracked files if deleted locally
 if not exist "%PROJECT_DIR%requirements.txt" git checkout -- "%PROJECT_DIR%requirements.txt" >nul 2>&1
 if not exist "%PROJECT_DIR%server.py" git checkout -- "%PROJECT_DIR%server.py" >nul 2>&1
@@ -16,12 +68,7 @@ if not exist "%PROJECT_DIR%Exten\manifest.json" git checkout -- "%PROJECT_DIR%Ex
 if not exist "%PROJECT_DIR%Exten\background.js" git checkout -- "%PROJECT_DIR%Exten\background.js" >nul 2>&1
 if not exist "%PROJECT_DIR%Exten\content.js" git checkout -- "%PROJECT_DIR%Exten\content.js" >nul 2>&1
 
-echo ============================================
-echo        DLP Server - First Time Setup
-echo ============================================
-echo.
-
-echo [1/5] Checking Python installation...
+echo [2/6] Checking Python installation...
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo [ERROR] Python not found. Please install Python and try again.
@@ -30,7 +77,7 @@ if %errorlevel% neq 0 (
 )
 echo        OK
 
-echo [2/5] Checking FFmpeg ^& FFprobe...
+echo [3/6] Checking FFmpeg ^& FFprobe...
 set "FFMPEG_FOUND=0"
 
 :: Check if ffmpeg and ffprobe exist in the project directory
@@ -101,7 +148,7 @@ if "!FFMPEG_FOUND!"=="0" (
     )
 )
 
-echo [3/5] Setting up Virtual Environment...
+echo [4/6] Setting up Virtual Environment...
 if not exist ".venv" (
     python -m venv .venv
     echo        Created new virtual environment.
@@ -109,7 +156,7 @@ if not exist ".venv" (
     echo        Virtual environment already exists.
 )
 
-echo [4/5] Installing / Updating libraries...
+echo [5/6] Installing / Updating libraries...
 if exist "%PROJECT_DIR%requirements.txt" (
     "%PROJECT_DIR%.venv\Scripts\python.exe" -m pip install --upgrade pip >nul 2>&1
     "%PROJECT_DIR%.venv\Scripts\pip.exe" install --upgrade -r "%PROJECT_DIR%requirements.txt"
@@ -117,7 +164,7 @@ if exist "%PROJECT_DIR%requirements.txt" (
     echo [WARNING] requirements.txt not found at %PROJECT_DIR%requirements.txt. Skipping library installation.
 )
 
-echo [5/5] Adding to Windows Startup...
+echo [6/6] Adding to Windows Startup...
 :: Use PowerShell to create a shortcut in the Startup folder
 powershell -Command "$s=(New-Object -COM WScript.Shell).CreateShortcut('%STARTUP_FOLDER%\dlp_server.lnk');$s.TargetPath='%BAT_PATH%';$s.WorkingDirectory='%PROJECT_DIR%';$s.Save()"
 if %errorlevel% equ 0 (
@@ -131,13 +178,9 @@ echo ============================================
 echo   Setup Complete!
 echo   The server will now start automatically
 echo   whenever your PC boots up.
-echo   Run 'dlp_server.bat' to start manually.
 echo ============================================
 echo.
-set /p START_NOW="Would you like to start the server now? (y/n): "
-if /i "%START_NOW%"=="y" (
-    start "" ".venv\Scripts\pythonw.exe" server.py
-    echo [STARTED] dlp_server is running in the background.
-)
-pause
+echo   Starting server in 3 seconds...
+ping -n 4 127.0.0.1 >nul 2>&1
+start "" "%~dp0dlp_server.bat"
 
