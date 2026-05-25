@@ -131,7 +131,10 @@ echo   %green%%bold%^|%reset%  %green%%bold%V  Update complete!%reset%          
 echo   %green%%bold%^|%reset%  %dim%!LAST_MSG:~0,44!%reset%  %green%%bold%^|%reset%
 echo   %green%%bold%+--------------------------------------------------+%reset%
 echo.
->nul ping -n 4 127.0.0.1
+echo   %dim%  Restarting launcher...%reset%
+>nul ping -n 3 127.0.0.1
+start "" "%~dp0dlp_server.bat"
+exit
 
 :start_server
 cls
