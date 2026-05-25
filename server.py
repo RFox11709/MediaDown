@@ -332,6 +332,16 @@ async def run_downloader(url, quality, mode, format_ext, filename, save_path, we
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    
+    # If the background script is connecting for update checking, just keep it alive
+    if websocket.query_params.get("client") == "extension_bg":
+        try:
+            while True:
+                # Just keep connection open, wait for disconnect
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            return
+
     current_download_task = None
     cancellation_event = asyncio.Event()
     
