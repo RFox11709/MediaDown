@@ -8,6 +8,11 @@ cd /d "%SCRIPT_DIR%"
 :: Enable ANSI via registry
 reg add HKCU\Console /v VirtualTerminalLevel /t REG_DWORD /d 1 /f >nul 2>&1
 
+:: Restore missing tracked files if deleted locally
+if not exist "requirements.txt" git checkout -- requirements.txt >nul 2>&1
+if not exist "server.py" git checkout -- server.py >nul 2>&1
+if not exist "setup_startup.bat" git checkout -- setup_startup.bat >nul 2>&1
+
 :: Get ESC character for colors
 for /f %%A in ('echo prompt $E ^| cmd') do set "ESC=%%A"
 set "cyan=!ESC![96m"
