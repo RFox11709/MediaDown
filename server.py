@@ -10,6 +10,9 @@ from pathlib import Path
 import uuid
 from datetime import datetime
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
 app = FastAPI()
 
 # Default Download Path
@@ -184,6 +187,7 @@ async def get_video_formats(url, websocket):
         ydl_opts = {
             'quiet': True, 'no_warnings': True, 'force_ipv4': True, 'noplaylist': True,
             'socket_timeout': 15,
+            'ffmpeg_location': SCRIPT_DIR,
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -245,6 +249,7 @@ async def run_downloader(url, quality, mode, format_ext, filename, save_path, we
         'force_ipv4': True,
         'socket_timeout': 15,
         'sleep_interval': 1, 
+        'ffmpeg_location': SCRIPT_DIR,
         
         'extractor_args': {
             'youtube': {
