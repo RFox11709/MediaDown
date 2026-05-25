@@ -1,0 +1,16 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Large binaries (download separately)
+ffmpeg.exe
+ffprobe.exe
+
+# Installers
+must_have/
+
+# Runtime / user-specific data
+download_history.json
+settings.json
