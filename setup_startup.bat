@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-title DLP Server Setup & Startup
+title DLP Server Setup ^& Startup
 
 :: Force Current Directory
 cd /d "%~dp0"
@@ -102,11 +102,11 @@ if not exist ".venv" (
 )
 
 echo [4/5] Installing / Updating libraries...
-if exist "requirements.txt" (
-    ".venv\Scripts\python.exe" -m pip install --upgrade pip >nul 2>&1
-    ".venv\Scripts\pip.exe" install --upgrade -r requirements.txt
+if exist "%PROJECT_DIR%requirements.txt" (
+    "%PROJECT_DIR%.venv\Scripts\python.exe" -m pip install --upgrade pip >nul 2>&1
+    "%PROJECT_DIR%.venv\Scripts\pip.exe" install --upgrade -r "%PROJECT_DIR%requirements.txt"
 ) else (
-    echo [WARNING] requirements.txt not found. Skipping library installation.
+    echo [WARNING] requirements.txt not found at %PROJECT_DIR%requirements.txt. Skipping library installation.
 )
 
 echo [5/5] Adding to Windows Startup...
