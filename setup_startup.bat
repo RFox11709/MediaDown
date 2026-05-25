@@ -8,6 +8,11 @@ set "PROJECT_DIR=%~dp0"
 set "BAT_PATH=%PROJECT_DIR%dlp_server.bat"
 set "STARTUP_FOLDER=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
 
+:: Restore missing tracked files if deleted locally
+if not exist "%PROJECT_DIR%requirements.txt" git checkout -- "%PROJECT_DIR%requirements.txt" >nul 2>&1
+if not exist "%PROJECT_DIR%server.py" git checkout -- "%PROJECT_DIR%server.py" >nul 2>&1
+if not exist "%PROJECT_DIR%dlp_server.bat" git checkout -- "%PROJECT_DIR%dlp_server.bat" >nul 2>&1
+
 echo ============================================
 echo        DLP Server - First Time Setup
 echo ============================================
