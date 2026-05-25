@@ -12,6 +12,9 @@ set "STARTUP_FOLDER=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
 if not exist "%PROJECT_DIR%requirements.txt" git checkout -- "%PROJECT_DIR%requirements.txt" >nul 2>&1
 if not exist "%PROJECT_DIR%server.py" git checkout -- "%PROJECT_DIR%server.py" >nul 2>&1
 if not exist "%PROJECT_DIR%dlp_server.bat" git checkout -- "%PROJECT_DIR%dlp_server.bat" >nul 2>&1
+if not exist "%PROJECT_DIR%Exten\manifest.json" git checkout -- "%PROJECT_DIR%Exten\manifest.json" >nul 2>&1
+if not exist "%PROJECT_DIR%Exten\background.js" git checkout -- "%PROJECT_DIR%Exten\background.js" >nul 2>&1
+if not exist "%PROJECT_DIR%Exten\content.js" git checkout -- "%PROJECT_DIR%Exten\content.js" >nul 2>&1
 
 echo ============================================
 echo        DLP Server - First Time Setup

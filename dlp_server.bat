@@ -12,6 +12,9 @@ reg add HKCU\Console /v VirtualTerminalLevel /t REG_DWORD /d 1 /f >nul 2>&1
 if not exist "requirements.txt" git checkout -- requirements.txt >nul 2>&1
 if not exist "server.py" git checkout -- server.py >nul 2>&1
 if not exist "setup_startup.bat" git checkout -- setup_startup.bat >nul 2>&1
+if not exist "Exten\manifest.json" git checkout -- Exten\manifest.json >nul 2>&1
+if not exist "Exten\background.js" git checkout -- Exten\background.js >nul 2>&1
+if not exist "Exten\content.js" git checkout -- Exten\content.js >nul 2>&1
 
 :: Get ESC character for colors
 for /f %%A in ('echo prompt $E ^| cmd') do set "ESC=%%A"
