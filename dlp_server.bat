@@ -82,8 +82,9 @@ if %errorlevel% neq 0 (
 echo %green%OK%reset%
 
 <nul set /p "=  %dim% [2/3]%reset% Comparing versions...  "
-for /f %%A in ('git rev-parse HEAD') do set "LOCAL_HEAD=%%A"
-for /f %%A in ('git rev-parse origin/master') do set "REMOTE_HEAD=%%A"
+set "LOCAL_HEAD=NONE"
+for /f %%A in ('git rev-parse HEAD 2^>nul') do set "LOCAL_HEAD=%%A"
+for /f %%A in ('git rev-parse origin/master 2^>nul') do set "REMOTE_HEAD=%%A"
 
 set "LOCAL_SHORT=!LOCAL_HEAD:~0,7!"
 set "REMOTE_SHORT=!REMOTE_HEAD:~0,7!"
@@ -110,11 +111,14 @@ echo   %cyan%%bold%+--------------------------------------------------+%reset%
 echo.
 
 <nul set /p "=  %dim% [3/3]%reset% Pulling latest code... "
-git pull origin master >nul 2>&1
+git reset --hard origin/master > "git_pull_error.log" 2>&1
 if %errorlevel% neq 0 (
     echo %red%FAILED%reset%
     echo.
-    echo   %red%  X  Pull failed.%reset% Starting with current version.
+    echo   %red%[Git Error]:%reset%
+    type "git_pull_error.log"
+    echo.
+    echo   %red%  X  Update failed.%reset% Starting with current version.
     echo.
     >nul ping -n 3 127.0.0.1
     goto :start_server
