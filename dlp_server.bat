@@ -8,6 +8,10 @@ cd /d "%SCRIPT_DIR%"
 :: Enable ANSI via registry
 reg add HKCU\Console /v VirtualTerminalLevel /t REG_DWORD /d 1 /f >nul 2>&1
 
+:: Prevent Git Credential Manager and terminal prompts for public repos
+set "GIT_TERMINAL_PROMPT=0"
+set "GCM_INTERACTIVE=false"
+
 :: Restore missing tracked files if deleted locally
 if not exist "requirements.txt" git checkout -- requirements.txt >nul 2>&1
 if not exist "server.py" git checkout -- server.py >nul 2>&1
