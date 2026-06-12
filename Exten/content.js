@@ -592,7 +592,7 @@ if (!document.getElementById('ytdlp-downloader-host')) {
     }
 
     function sanitizeFilename(name) {
-        return name.replace(/[^a-z0-9 \-_]/gi, '').trim();
+        return name.replace(/[<>:"/\\|?*\x00-\x1F]/g, '').trim();
     }
 
     function updateFormatOptions() {
@@ -821,6 +821,24 @@ if (!document.getElementById('ytdlp-downloader-host')) {
                 loadBtn.disabled = false;
                 loadBtn.innerHTML = "Fetch Formats";
             }
+            else if (data.status === "file_check_result") {
+                if (data.exists) {
+                    if (!confirm("A file with this name already exists in the destination folder. Do you want to overwrite it?")) {
+                        statusDiv.textContent = "Configure and Download";
+                        return;
+                    }
+                }
+                statusDiv.textContent = "Starting...";
+                socket.send(JSON.stringify({
+                    action: "start",
+                    url: urlInput.value,
+                    quality: qualitySelect.value,
+                    mode: modeSelect.value,
+                    format: formatSelect.value,
+                    filename: filenameInput.value,
+                    path: pathInput.value
+                }));
+            }
             else if (data.status === "history_data") {
                 renderHistory(data.history);
             }
@@ -838,12 +856,9 @@ if (!document.getElementById('ytdlp-downloader-host')) {
     loadBtn.addEventListener('click', fetchFormats);
 
     startBtn.addEventListener('click', () => {
-        statusDiv.textContent = "Starting...";
+        statusDiv.textContent = "Checking file...";
         socket.send(JSON.stringify({
-            action: "start",
-            url: urlInput.value,
-            quality: qualitySelect.value,
-            mode: modeSelect.value,
+            action: "check_file",
             format: formatSelect.value,
             filename: filenameInput.value,
             path: pathInput.value

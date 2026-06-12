@@ -250,6 +250,7 @@ async def run_downloader(url, quality, mode, format_ext, filename, save_path, we
         'socket_timeout': 15,
         'sleep_interval': 1, 
         'ffmpeg_location': SCRIPT_DIR,
+        'overwrites': True,
         
         'extractor_args': {
             'youtube': {
@@ -353,6 +354,17 @@ async def websocket_endpoint(websocket: WebSocket):
 
             if action == "get_formats":
                 await get_video_formats(cmd.get("url"), websocket)
+
+            elif action == "check_file":
+                format_ext = cmd.get("format", "mp4")
+                filename = cmd.get("filename", "video")
+                save_path = cmd.get("path", get_last_download_path())
+                dest_file = os.path.join(save_path, f"{filename}.{format_ext}")
+                exists = os.path.exists(dest_file)
+                await websocket.send_text(json.dumps({
+                    "status": "file_check_result",
+                    "exists": exists
+                }))
 
             elif action == "browse_folder":
                 loop = asyncio.get_running_loop()
