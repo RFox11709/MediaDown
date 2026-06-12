@@ -60,10 +60,18 @@ echo   %white%%bold%^|%reset%  %cyan%~%reset%  Checking for updates...          
 echo   %white%%bold%+--------------------------------------------------+%reset%
 echo.
 
+if not exist ".git" (
+    git init >nul 2>&1
+    git remote add origin https://github.com/RFox11709/MediaDown.git >nul 2>&1
+)
+
 <nul set /p "=  %dim% [1/3]%reset% Contacting GitHub...  "
-git fetch origin master >nul 2>&1
+git fetch origin master > "git_error.log" 2>&1
 if %errorlevel% neq 0 (
     echo %yellow%FAILED%reset%
+    echo.
+    echo   %red%[Git Error]:%reset%
+    type "git_error.log"
     echo.
     echo   %yellow%  ! Could not reach GitHub.%reset%
     echo   %dim%    Starting with current version.%reset%
