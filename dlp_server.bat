@@ -175,9 +175,11 @@ if defined CUR_VER (
 
 echo.
 echo   %dim%--------------------------------------------------%reset%
-echo   %dim%  Press Ctrl+C or close this window to stop.%reset%
+echo   %dim%  Server is starting in the background...%reset%
+echo   %dim%  This window will close automatically.%reset%
 echo   %dim%--------------------------------------------------%reset%
 echo.
 
-".venv\Scripts\python.exe" server.py
+:: Start the server silently in the background
+start "" ".venv\Scripts\pythonw.exe" server.py
 exit
