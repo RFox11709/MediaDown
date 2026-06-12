@@ -33,6 +33,8 @@ if (!document.getElementById('ytdlp-downloader-host')) {
             display: flex;
             flex-direction: column;
             padding: 10px;
+            resize: both;
+            overflow: hidden;
         }
 
         /* Dynamic scaling based on screen size */
