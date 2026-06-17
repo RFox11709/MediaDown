@@ -258,12 +258,12 @@ async def run_downloader(url, quality, mode, format_ext, filename, save_path, co
         if quality == "best":
             fmt_str = "bestvideo/best"
         else:
-            fmt_str = f"bestvideo[height={quality}]/bestvideo"
+            fmt_str = f"bestvideo[height<={quality}]/bestvideo/best"
     else:
         if quality == "best":
             fmt_str = "bestvideo+bestaudio/best"
         else:
-            fmt_str = f"bestvideo[height={quality}]+bestaudio/best[height={quality}]/best"
+            fmt_str = f"bestvideo[height<={quality}]+bestaudio/best[height<={quality}]/bestvideo+bestaudio/best"
 
     ydl_opts = {
         'format': fmt_str,
