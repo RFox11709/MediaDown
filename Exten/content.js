@@ -771,9 +771,9 @@ if (!document.getElementById('ytdlp-downloader-host')) {
         let url = urlInput.value.trim();
         if (!url) { setFetchStatus('Please enter a URL', 'error'); return; }
 
-        // Final safeguard against blob URLs - if one sneaks in, fall back to the page URL
-        if (url.startsWith('blob:')) {
-            url = window.location.href;
+        // Automatically remove 'blob:' prefix from the URL if present
+        if (url.toLowerCase().startsWith('blob:')) {
+            url = url.substring(5);
             urlInput.value = url;
         }
 
@@ -816,8 +816,8 @@ if (!document.getElementById('ytdlp-downloader-host')) {
         const path     = pathInput.value.trim();
         if (!path) { setFetchStatus('Please select a destination folder', 'error'); return; }
 
-        if (url.startsWith('blob:')) {
-            url = window.location.href;
+        if (url.toLowerCase().startsWith('blob:')) {
+            url = url.substring(5);
             urlInput.value = url;
         }
 
@@ -1077,10 +1077,12 @@ if (!document.getElementById('ytdlp-downloader-host')) {
             e.stopPropagation();
 
             // Determine the best URL: src attribute, currentSrc, or page URL
-            // blob: URLs are browser-internal (MediaSource API) — yt-dlp can't access them,
-            // so we always fall back to the page URL which yt-dlp can extract from.
-            const videoSrc = video.currentSrc || video.src || video.querySelector('source')?.src || '';
-            const targetUrl = (!videoSrc || videoSrc.startsWith('blob:')) ? window.location.href : videoSrc;
+            // If it's a blob URL, strip the 'blob:' prefix as requested
+            let videoSrc = video.currentSrc || video.src || video.querySelector('source')?.src || '';
+            if (videoSrc.toLowerCase().startsWith('blob:')) {
+                videoSrc = videoSrc.substring(5);
+            }
+            const targetUrl = videoSrc || window.location.href;
 
             // Open MediaVal and populate the URL
             if (host.style.display === 'none') {
