@@ -1076,11 +1076,35 @@ if (!document.getElementById('ytdlp-downloader-host')) {
             e.preventDefault();
             e.stopPropagation();
 
-            // Determine the best URL: src attribute, currentSrc, or page URL
-            // blob: URLs are browser-internal (MediaSource API) — yt-dlp can't access them,
-            // so we always fall back to the page URL which yt-dlp can extract from.
-            const videoSrc = video.currentSrc || video.src || video.querySelector('source')?.src || '';
-            const targetUrl = (!videoSrc || videoSrc.startsWith('blob:')) ? window.location.href : videoSrc;
+            // Helper to find the actual video link if the src is a blob (e.g., YouTube homepage previews)
+            function findRealVideoUrl(vid) {
+                const src = vid.currentSrc || vid.src || vid.querySelector('source')?.src || '';
+                if (src && !src.startsWith('blob:')) return src;
+
+                // 1. Is the video inside a clickable link?
+                const closestA = vid.closest('a[href]');
+                if (closestA && closestA.href) return closestA.href;
+
+                // 2. YouTube specific: find the closest video container and grab its link
+                const ytContainer = vid.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, ytd-reel-item-renderer');
+                if (ytContainer) {
+                    const ytLink = ytContainer.querySelector('a#thumbnail, a#video-title, a');
+                    if (ytLink && ytLink.href) return ytLink.href;
+                }
+
+                // 3. General fallback: look for a video link in the parent elements
+                let parent = vid.parentElement;
+                while (parent && parent !== document.body) {
+                    const a = parent.querySelector('a[href*="/watch"], a[href*="/video"]');
+                    if (a && a.href) return a.href;
+                    parent = parent.parentElement;
+                }
+
+                // 4. Absolute fallback
+                return window.location.href;
+            }
+
+            const targetUrl = findRealVideoUrl(video);
 
             // Open MediaVal and populate the URL
             if (host.style.display === 'none') {
