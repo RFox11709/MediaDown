@@ -189,6 +189,7 @@ async def get_video_formats(url, websocket):
             'quiet': True, 'no_warnings': True, 'force_ipv4': True, 'noplaylist': True,
             'socket_timeout': 15,
             'ffmpeg_location': SCRIPT_DIR,
+            'cookiesfrombrowser': ('chrome',),
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -252,6 +253,7 @@ async def run_downloader(url, quality, mode, format_ext, filename, save_path, we
         'sleep_interval': 1, 
         'ffmpeg_location': SCRIPT_DIR,
         'overwrites': True,
+        'cookiesfrombrowser': ('chrome',),
         
         'extractor_args': {
             'youtube': {
