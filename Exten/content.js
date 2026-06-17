@@ -768,8 +768,14 @@ if (!document.getElementById('ytdlp-downloader-host')) {
 
     // ──────────────────────────── FETCH ────────────────────────────────
     function fetchFormats() {
-        const url = urlInput.value.trim();
+        let url = urlInput.value.trim();
         if (!url) { setFetchStatus('Please enter a URL', 'error'); return; }
+
+        // Final safeguard against blob URLs - if one sneaks in, fall back to the page URL
+        if (url.startsWith('blob:')) {
+            url = window.location.href;
+            urlInput.value = url;
+        }
 
         if (!socket || socket.readyState !== WebSocket.OPEN) {
             setFetchStatus('Server not connected. Retrying…', 'error');
@@ -805,10 +811,15 @@ if (!document.getElementById('ytdlp-downloader-host')) {
 
     // ──────────────────────────── START DOWNLOAD ───────────────────────
     startBtn.addEventListener('click', () => {
-        const url      = urlInput.value.trim();
+        let url      = urlInput.value.trim();
         const filename = sanitize(filenameInput.value.trim()) || 'download';
         const path     = pathInput.value.trim();
         if (!path) { setFetchStatus('Please select a destination folder', 'error'); return; }
+
+        if (url.startsWith('blob:')) {
+            url = window.location.href;
+            urlInput.value = url;
+        }
 
         if (isDirectDownload) {
             let ext = directFmtSel.value;
