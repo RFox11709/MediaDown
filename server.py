@@ -183,15 +183,38 @@ class DownloadManager:
             except Exception:
                 pass
 
-async def get_video_formats(url, websocket):
+def write_cookies_txt(cookies_list):
+    if not cookies_list:
+        return None
+    cookie_path = os.path.join(SCRIPT_DIR, "browser_cookies.txt")
+    try:
+        with open(cookie_path, "w", encoding="utf-8") as f:
+            f.write("# Netscape HTTP Cookie File\n")
+            for c in cookies_list:
+                domain = c.get('domain', '')
+                include_subdomains = "TRUE" if domain.startswith('.') else "FALSE"
+                path = c.get('path', '/')
+                secure = "TRUE" if c.get('secure') else "FALSE"
+                expiration = str(int(c.get('expirationDate', 0))) if 'expirationDate' in c else "0"
+                name = c.get('name', '')
+                value = c.get('value', '')
+                f.write(f"{domain}\t{include_subdomains}\t{path}\t{secure}\t{expiration}\t{name}\t{value}\n")
+        return cookie_path
+    except Exception:
+        return None
+
+async def get_video_formats(url, cookies, websocket):
     try:
         ydl_opts = {
             'quiet': True, 'no_warnings': True, 'force_ipv4': True, 'noplaylist': True,
             'socket_timeout': 15,
             'ffmpeg_location': SCRIPT_DIR,
-            'cookiesfrombrowser': ('chrome',),
         }
         
+        cookie_file = write_cookies_txt(cookies)
+        if cookie_file:
+            ydl_opts['cookiefile'] = cookie_file
+            
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             loop = asyncio.get_running_loop()
             info = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=False))
@@ -214,7 +237,7 @@ async def get_video_formats(url, websocket):
     except Exception as e:
         await websocket.send_text(json.dumps({"status": "error", "message": str(e)}))
 
-async def run_downloader(url, quality, mode, format_ext, filename, save_path, websocket, cancellation_event):
+async def run_downloader(url, quality, mode, format_ext, filename, save_path, cookies, websocket, cancellation_event):
     manager = DownloadManager(websocket, cancellation_event)
     
     if not os.path.exists(save_path):
@@ -253,7 +276,6 @@ async def run_downloader(url, quality, mode, format_ext, filename, save_path, we
         'sleep_interval': 1, 
         'ffmpeg_location': SCRIPT_DIR,
         'overwrites': True,
-        'cookiesfrombrowser': ('chrome',),
         
         'extractor_args': {
             'youtube': {
@@ -270,6 +292,10 @@ async def run_downloader(url, quality, mode, format_ext, filename, save_path, we
     }
 
     # Initialize Post Processors
+    cookie_file = write_cookies_txt(cookies)
+    if cookie_file:
+        ydl_opts['cookiefile'] = cookie_file
+
     postprocessors = []
 
     if mode == "audio":
@@ -471,7 +497,7 @@ async def websocket_endpoint(websocket: WebSocket):
             action = cmd.get("action")
 
             if action == "get_formats":
-                await get_video_formats(cmd.get("url"), websocket)
+                await get_video_formats(cmd.get("url"), cmd.get("cookies", []), websocket)
 
             elif action == "get_default_path":
                 await websocket.send_text(json.dumps({
@@ -507,10 +533,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 format_ext = cmd.get("format", "mp4")
                 filename = cmd.get("filename", "video")
                 save_path = cmd.get("path", get_last_download_path())
+                cookies = cmd.get("cookies", [])
                 
+                # Add cookies to ydl_opts via run_downloader signature change if needed
+                # Wait, I need to pass cookies to run_downloader
                 cancellation_event.clear()
                 current_download_task = asyncio.create_task(
-                    run_downloader(url, quality, mode, format_ext, filename, save_path, websocket, cancellation_event)
+                    run_downloader(url, quality, mode, format_ext, filename, save_path, cookies, websocket, cancellation_event)
                 )
 
             elif action == "direct_download":

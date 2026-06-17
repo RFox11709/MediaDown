@@ -804,7 +804,16 @@ if (!document.getElementById('ytdlp-downloader-host')) {
         setFetchStatus('Fetching formats…');
         loadBtn.disabled = true;
         loadBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0"/></svg> Fetching…`;
-        socket.send(JSON.stringify({ action: 'get_formats', url }));
+        
+        try {
+            const domain = new URL(url).hostname.replace(/^www\./, '');
+            chrome.runtime.sendMessage({ action: 'get_cookies', domain: domain }, (response) => {
+                const cookies = (response && response.cookies) ? response.cookies : [];
+                socket.send(JSON.stringify({ action: 'get_formats', url, cookies }));
+            });
+        } catch(e) {
+            socket.send(JSON.stringify({ action: 'get_formats', url, cookies: [] }));
+        }
     }
 
     loadBtn.addEventListener('click', fetchFormats);
@@ -985,15 +994,26 @@ if (!document.getElementById('ytdlp-downloader-host')) {
                         }
                     }
                     setStatusText('Starting…');
-                    socket.send(JSON.stringify({
+                    const startUrl = urlInput.value.trim();
+                    const payload = {
                         action: 'start',
-                        url: urlInput.value.trim(),
+                        url: startUrl,
                         quality: qualitySelect.value,
                         mode: currentMode,
                         format: formatSelect.value,
                         filename: sanitize(filenameInput.value.trim()) || 'download',
                         path: pathInput.value.trim()
-                    }));
+                    };
+                    try {
+                        const startDomain = new URL(startUrl).hostname.replace(/^www\./, '');
+                        chrome.runtime.sendMessage({ action: 'get_cookies', domain: startDomain }, (response) => {
+                            payload.cookies = (response && response.cookies) ? response.cookies : [];
+                            socket.send(JSON.stringify(payload));
+                        });
+                    } catch(e) {
+                        payload.cookies = [];
+                        socket.send(JSON.stringify(payload));
+                    }
                     break;
 
                 case 'history_data':

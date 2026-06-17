@@ -4,6 +4,21 @@ chrome.action.onClicked.addListener((tab) => {
   });
 });
 
+// Listener to extract cookies for the content script
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === "get_cookies") {
+    if (!chrome.cookies) {
+      sendResponse({ cookies: [] });
+      return true;
+    }
+    // Get cookies for the specified domain
+    chrome.cookies.getAll({ domain: request.domain }, (cookies) => {
+      sendResponse({ cookies: cookies || [] });
+    });
+    return true; // Keep the message channel open for the async response
+  }
+});
+
 // --- Auto Reload Extension on Server Restart ---
 let ws = null;
 let wasConnected = false;
