@@ -1066,8 +1066,10 @@ if (!document.getElementById('ytdlp-downloader-host')) {
             e.stopPropagation();
 
             // Determine the best URL: src attribute, currentSrc, or page URL
+            // blob: URLs are browser-internal (MediaSource API) — yt-dlp can't access them,
+            // so we always fall back to the page URL which yt-dlp can extract from.
             const videoSrc = video.currentSrc || video.src || video.querySelector('source')?.src || '';
-            const targetUrl = videoSrc || window.location.href;
+            const targetUrl = (!videoSrc || videoSrc.startsWith('blob:')) ? window.location.href : videoSrc;
 
             // Open MediaVal and populate the URL
             if (host.style.display === 'none') {
