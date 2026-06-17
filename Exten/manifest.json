@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
   "name": "MediaVal",
-  "version": "2.0",
+  "version": "3.0",
+  "description": "Download media, files, and more from any page",
   "action": {
-    "default_title": "Toggle Downloader"
+    "default_title": "Toggle MediaVal"
   },
   "background": {
     "service_worker": "background.js"
@@ -11,7 +12,8 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"]
+      "js": ["content.js"],
+      "run_at": "document_idle"
     }
   ],
   "permissions": ["activeTab"],

@@ -1,691 +1,721 @@
-// Check if already injected
+// ============================================================
+//  MediaVal – Content Script  v3.0
+//  Features:
+//    • Dark glassmorphism UI, draggable, resizable
+//    • Auto-detects <video> elements → floating download button
+//    • Supports yt-dlp (video/audio) AND direct file downloads
+//      (.exe .zip .pdf .apk .dmg .iso .rar .7z .tar .gz …)
+//    • WebSocket reconnect with exponential back-off
+//    • History panel, browse folder, progress stats
+// ============================================================
+
 if (!document.getElementById('ytdlp-downloader-host')) {
 
+    // ──────────────────────────── SHADOW HOST ────────────────────────────
     const host = document.createElement('div');
     host.id = 'ytdlp-downloader-host';
-    host.style.position = 'fixed';
-    host.style.top = '20px';
-    host.style.right = '20px';
-    host.style.zIndex = '2147483647';
-    host.style.display = 'none';
+    host.style.cssText = `
+        position:fixed; top:24px; right:24px;
+        z-index:2147483647; display:none;
+    `;
     document.body.appendChild(host);
 
     const shadow = host.attachShadow({ mode: 'open' });
 
+    // ──────────────────────────── STYLES ─────────────────────────────────
     const style = document.createElement('style');
     style.textContent = `
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-        :host { 
-            font-family: 'Outfit', sans-serif; 
-            color: #1e293b; 
-        }
-        * { box-sizing: border-box; }
-        
+        :host { font-family: 'Inter', sans-serif; }
+        * { box-sizing: border-box; margin:0; padding:0; }
+
+        /* ── Container ── */
         #container {
-            width: clamp(320px, 25vw, 450px);
-            max-width: 95vw;
-            max-height: 95vh;
-            background: #ffffff;
-            border-radius: 20px;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.15);
-            border: 1px solid #f0f7f6;
+            width: clamp(340px, 26vw, 460px);
+            max-height: 90vh;
+            background: rgba(13,17,23,0.92);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border-radius: 18px;
+            border: 1px solid rgba(255,255,255,0.08);
+            box-shadow: 0 24px 64px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04) inset;
             display: flex;
             flex-direction: column;
-            padding: 10px;
-            resize: both;
             overflow: hidden;
+            color: #e2e8f0;
         }
 
-        /* Dynamic scaling based on screen size */
-        @media (max-width: 768px) {
-            #container { width: 95vw; zoom: 0.85; }
-        }
-        @media (min-width: 1920px) {
-            #container { zoom: 1.2; }
-        }
-        @media (min-width: 2560px) {
-            #container { zoom: 1.5; }
-        }
-
+        /* ── Header ── */
         #header {
-            padding: 15px 20px;
-            cursor: move;
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center;
-            user-select: none;
-            margin-bottom: 5px;
-            flex-shrink: 0;
-        }
-        #header h3 { 
-            margin: 0; 
-            font-size: 20px; 
-            font-weight: 700; 
-            color: #2d5a55; 
-            letter-spacing: -0.5px;
-        }
-        .header-actions { display: flex; gap: 15px; align-items: center; }
-        .icon-btn { 
-            cursor: pointer; 
-            background: none; 
-            border: none; 
-            padding: 0; 
-            color: #7d8b8a; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center;
-            transition: color 0.2s;
-        }
-        .icon-btn:hover { color: #2d5a55; }
-        .icon-btn.active { color: #00d2be; }
-        .icon-btn.active:hover { color: #1d6e65; }
-        #closeBtn { font-size: 24px; font-weight: 400; }
-
-        .content { 
-            padding: 10px 15px; 
-            display: flex; 
-            flex-direction: column; 
-            gap: 18px; 
-            overflow-y: auto;
-        }
-        
-        .content::-webkit-scrollbar { width: 6px; }
-        .content::-webkit-scrollbar-track { background: transparent; }
-        .content::-webkit-scrollbar-thumb { background: #c3f5f0; border-radius: 3px; }
-        .content::-webkit-scrollbar-thumb:hover { background: #a9eeea; }
-
-        .field-group { display: flex; flex-direction: column; gap: 6px; }
-        label { 
-            font-size: 11px; 
-            font-weight: 700; 
-            color: #8fa6a3; 
-            letter-spacing: 0.5px;
-            text-transform: uppercase;
-        }
-
-        input[type="text"], select {
-            width: 100%; 
-            padding: 12px 16px;
-            border: 1px solid #d4f2ef; 
-            border-radius: 12px;
-            font-size: 14px; 
-            outline: none; 
-            background: #e6f9f7;
-            color: #2d5a55;
-            transition: all 0.2s;
-            font-weight: 500;
-        }
-        input::placeholder { color: #a1c7c2; font-weight: 400; }
-        input:focus, select:focus { border-color: #00d2be; background: #f0fdfc; }
-        
-        .input-with-action { position: relative; display: flex; align-items: center; }
-        
-        #resetLink { 
-            align-self: flex-end;
-            font-size: 11px; 
-            color: #2d5a55; 
-            cursor: pointer; 
-            text-decoration: underline; 
-            font-weight: 600;
-            margin-top: -12px;
-        }
-
-        .row { display: flex; gap: 12px; }
-        .col { flex: 1; display: flex; flex-direction: column; gap: 6px; }
-        
-        #browseBtn {
-            width: 44px;
-            height: 44px;
-            margin-left: 10px;
-            background: #a9eeea;
-            border-radius: 12px;
+            padding: 14px 18px;
             display: flex;
+            justify-content: space-between;
             align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            border: none;
-            color: #2d5a55;
+            cursor: move;
+            user-select: none;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
             flex-shrink: 0;
-            transition: 0.2s;
+            background: rgba(255,255,255,0.03);
         }
-        #browseBtn:hover { background: #86dbd6; }
-        #browseBtn svg { width: 22px; height: 22px; }
+        .logo {
+            display: flex; align-items: center; gap: 10px;
+        }
+        .logo-icon {
+            width: 30px; height: 30px;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .logo-icon svg { width:16px; height:16px; }
+        #header h3 {
+            font-size: 15px;
+            font-weight: 700;
+            color: #f1f5f9;
+            letter-spacing: -0.3px;
+        }
+        .header-right { display:flex; gap:8px; align-items:center; }
+        .icon-btn {
+            background: none; border: none; cursor: pointer;
+            color: #64748b; padding: 6px; border-radius: 8px;
+            display:flex; align-items:center; justify-content:center;
+            transition: all 0.15s;
+        }
+        .icon-btn:hover { color: #cbd5e1; background: rgba(255,255,255,0.06); }
+        .icon-btn.active { color: #818cf8; background: rgba(129,140,248,0.12); }
 
+        /* ── Connection badge ── */
+        #conn-badge {
+            font-size: 10px; font-weight: 600; letter-spacing: 0.5px;
+            padding: 3px 8px; border-radius: 20px;
+            background: rgba(239,68,68,0.18); color: #f87171;
+            border: 1px solid rgba(239,68,68,0.25);
+            transition: all 0.3s;
+        }
+        #conn-badge.connected {
+            background: rgba(34,197,94,0.15); color: #4ade80;
+            border-color: rgba(34,197,94,0.25);
+        }
+        #conn-badge.connecting {
+            background: rgba(251,191,36,0.15); color: #fbbf24;
+            border-color: rgba(251,191,36,0.25);
+        }
+
+        /* ── Scrollable body ── */
+        .panel-body {
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .panel-body::-webkit-scrollbar { width: 4px; }
+        .panel-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
+        .panel-body::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+        /* ── Field groups ── */
+        .field-group { display:flex; flex-direction:column; gap:6px; }
+        label {
+            font-size: 10px; font-weight: 700; letter-spacing: 0.8px;
+            text-transform: uppercase; color: #475569;
+        }
+        input[type="text"], select {
+            width: 100%; padding: 10px 14px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.09);
+            border-radius: 10px;
+            font-size: 13px; color: #cbd5e1;
+            outline: none; transition: all 0.2s;
+            font-family: inherit;
+        }
+        input::placeholder { color: #334155; }
+        input:focus, select:focus {
+            border-color: rgba(99,102,241,0.5);
+            background: rgba(99,102,241,0.06);
+            box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+        }
         select {
             appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%232d5a55'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
             background-repeat: no-repeat;
-            background-position: right 12px center;
-            background-size: 14px;
-            padding-right: 35px;
-        }
-
-        .btn-main {
-            width: 100%;
-            padding: 14px;
-            border-radius: 12px;
-            font-size: 18px;
-            font-weight: 700;
-            color: white;
-            border: none;
+            background-position: right 10px center;
+            background-size: 13px;
+            padding-right: 32px;
             cursor: pointer;
-            background: linear-gradient(135deg, #1d6e65 0%, #00d2be 100%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            transition: transform 0.2s, box-shadow 0.2s;
-            margin-top: 5px;
+            color: #94a3b8;
         }
-        .btn-main:active { transform: scale(0.98); }
-        .btn-main:disabled { background: #cbd5e1; cursor: not-allowed; }
-        
-        #stopBtn { 
-            background: #ff6b6b; 
-            font-size: 14px; 
-            padding: 10px; 
-            display: none; 
-            margin-top: 10px;
+        select option { background: #1e293b; color: #cbd5e1; }
+
+        /* ── URL row with paste btn ── */
+        .input-row { display:flex; gap:8px; align-items:center; }
+        .input-row input { flex:1; }
+
+        /* ── Mode tabs ── */
+        .mode-tabs { display:flex; gap:6px; }
+        .mode-tab {
+            flex:1; padding: 8px 6px; border-radius: 8px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.07);
+            color: #64748b; font-size: 11px; font-weight: 600;
+            cursor: pointer; text-align: center; transition: all 0.15s;
+            font-family: inherit;
+        }
+        .mode-tab:hover { background: rgba(255,255,255,0.07); color: #94a3b8; }
+        .mode-tab.active {
+            background: rgba(99,102,241,0.18);
+            border-color: rgba(99,102,241,0.4);
+            color: #a5b4fc;
         }
 
-        /* Status Section */
-        #status-area {
-            margin-top: 10px;
-            padding: 20px;
-            border: 1px dashed #c2dcd8;
-            border-radius: 20px;
-            display: none;
-        }
-        .status-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 12px;
-        }
-        .status-title { font-size: 14px; font-weight: 700; color: #2d5a55; }
-        .encrypted-badge {
-            font-size: 10px;
-            font-weight: 700;
-            padding: 2px 8px;
-            background: #c3f5f0;
-            color: #2d5a55;
-            border-radius: 10px;
-            text-transform: uppercase;
-        }
+        /* ── Selects row ── */
+        .row { display:flex; gap:10px; }
+        .col { flex:1; display:flex; flex-direction:column; gap:6px; }
+        .col.disabled { opacity:0.35; pointer-events:none; }
 
-        .progress-container { margin-bottom: 15px; }
-        .progress-text-row {
-            display: flex;
-            justify-content: space-between;
-            font-size: 12px;
-            font-weight: 600;
-            color: #2d5a55;
-            margin-bottom: 8px;
+        /* ── Browse btn ── */
+        #browseBtn {
+            width: 40px; height: 40px; flex-shrink:0;
+            background: rgba(99,102,241,0.12);
+            border: 1px solid rgba(99,102,241,0.25);
+            border-radius: 10px; cursor:pointer;
+            display:flex; align-items:center; justify-content:center;
+            color: #818cf8; transition: all 0.2s;
         }
-        .progress-wrapper { 
-            background: #e6f9f7; 
-            height: 10px; 
-            border-radius: 5px; 
-            overflow: hidden;
-        }
-        .progress-bar { 
-            height: 100%; 
-            background: #00d2be;
-            width: 0%; 
-            transition: width 0.3s ease; 
-        }
+        #browseBtn:hover { background: rgba(99,102,241,0.22); }
+        #browseBtn svg { width:18px; height:18px; }
 
-        .stats-grid { 
-            display: grid; 
-            grid-template-columns: 1fr 1px 1fr 1px 1fr; 
-            align-items: center;
-            text-align: center; 
+        /* ── Buttons ── */
+        .btn-primary {
+            width: 100%; padding: 12px 16px;
+            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+            border: none; border-radius: 11px;
+            color: white; font-size: 14px; font-weight: 700;
+            cursor: pointer; display:flex; align-items:center; justify-content:center; gap:8px;
+            transition: all 0.2s; font-family: inherit;
+            letter-spacing: -0.2px;
         }
-        .stat-box { display: flex; flex-direction: column; gap: 2px; }
-        .stat-label { font-size: 10px; font-weight: 700; color: #8fa6a3; text-transform: uppercase; }
-        .stat-value { font-size: 13px; font-weight: 600; color: #2d5a55; }
-        .divider { background: #e6f9f7; height: 30px; width: 1px; }
+        .btn-primary:hover { filter: brightness(1.1); transform: translateY(-1px); box-shadow: 0 8px 24px rgba(99,102,241,0.3); }
+        .btn-primary:active { transform: translateY(0); }
+        .btn-primary:disabled { background: #1e293b; color:#475569; cursor:not-allowed; filter:none; transform:none; box-shadow:none; }
 
-        #fetch-status { text-align: center; font-size: 12px; color: #64748b; margin-top: -10px; min-height: 14px; }
-        .error-msg { color: #ef4444 !important; }
-        .success-msg { color: #00d2be !important; }
+        .btn-danger {
+            width: 100%; padding: 10px 16px;
+            background: rgba(239,68,68,0.12);
+            border: 1px solid rgba(239,68,68,0.25);
+            border-radius: 10px; color: #f87171;
+            font-size: 13px; font-weight: 600; cursor:pointer;
+            display:none; align-items:center; justify-content:center; gap:8px;
+            transition: all 0.2s; font-family: inherit;
+        }
+        .btn-danger:hover { background: rgba(239,68,68,0.2); }
+        .btn-danger:disabled { opacity:0.5; cursor:not-allowed; }
 
-        /* History Panel */
-        #historyPanel {
-            display: none;
-            flex-direction: column;
-            gap: 15px;
-        }
-        .history-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid #e6f9f7;
-            padding-bottom: 8px;
-        }
-        .history-header h4 {
-            margin: 0;
-            font-size: 16px;
-            color: #2d5a55;
-            font-weight: 700;
-        }
-        .text-btn {
-            background: none;
-            border: none;
-            color: #ff6b6b;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            padding: 0;
-            transition: opacity 0.2s;
-        }
-        .text-btn:hover {
-            opacity: 0.8;
-            text-decoration: underline;
-        }
-        #historyList {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            max-height: 320px;
-            overflow-y: auto;
-            padding-right: 4px;
-        }
-        #historyList::-webkit-scrollbar {
-            width: 6px;
-        }
-        #historyList::-webkit-scrollbar-track {
-            background: #f0fdfc;
-            border-radius: 3px;
-        }
-        #historyList::-webkit-scrollbar-thumb {
-            background: #c3f5f0;
-            border-radius: 3px;
-        }
-        #historyList::-webkit-scrollbar-thumb:hover {
-            background: #a9eeea;
-        }
-        .history-item {
-            padding: 12px;
-            border-radius: 12px;
-            background: #f0fdfc;
-            border: 1px solid #d4f2ef;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            position: relative;
-            transition: all 0.2s;
-        }
-        .history-item:hover {
-            border-color: #86dbd6;
-            box-shadow: 0 4px 12px rgba(0,210,190,0.05);
-        }
-        .history-item-title {
-            font-size: 13px;
-            font-weight: 600;
-            color: #2d5a55;
-            padding-right: 20px;
-            word-break: break-all;
-        }
-        .history-item-meta {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 11px;
-            color: #8fa6a3;
-        }
-        .history-item-actions {
-            display: flex;
-            gap: 8px;
-            justify-content: flex-end;
-            margin-top: 4px;
-            border-top: 1px dashed #e6f9f7;
-            padding-top: 6px;
-        }
-        .history-action-btn {
-            background: none;
-            border: none;
-            font-size: 11px;
-            font-weight: 600;
-            color: #2d5a55;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            padding: 2px 6px;
-            border-radius: 4px;
-            transition: background 0.2s;
-        }
-        .history-action-btn:hover {
-            background: #c3f5f0;
-        }
-        .history-action-btn svg {
-            flex-shrink: 0;
-        }
-        .history-delete-btn {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: none;
-            border: none;
-            color: #a1c7c2;
-            cursor: pointer;
-            padding: 2px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 50%;
-            transition: all 0.2s;
-            font-size: 16px;
-            line-height: 1;
-        }
-        .history-delete-btn:hover {
-            color: #ff6b6b;
-            background: #ffe3e3;
-        }
-        .badge {
-            font-size: 9px;
-            font-weight: 700;
-            padding: 2px 6px;
-            border-radius: 8px;
-            text-transform: uppercase;
-        }
-        .badge-finished {
-            background: #c3f5f0;
-            color: #1d6e65;
-        }
-        .badge-stopped {
-            background: #ffe3e3;
-            color: #ff6b6b;
-        }
-        .badge-failed {
-            background: #ffe3e3;
-            color: #ff6b6b;
-        }
-        .no-history {
-            text-align: center;
-            color: #8fa6a3;
-            font-size: 13px;
-            padding: 30px 10px;
-        }
         .btn-secondary {
-            width: 100%;
-            padding: 12px;
+            width: 100%; padding: 10px 16px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 10px; color: #64748b;
+            font-size: 13px; font-weight: 600; cursor:pointer;
+            transition: all 0.2s; font-family: inherit;
+        }
+        .btn-secondary:hover { background: rgba(255,255,255,0.08); color:#94a3b8; }
+
+        .link-btn {
+            background:none; border:none; color:#818cf8;
+            font-size:11px; font-weight:600; cursor:pointer;
+            font-family:inherit; padding:0;
+            text-decoration:underline; text-underline-offset:2px;
+            transition: color 0.15s;
+        }
+        .link-btn:hover { color:#a5b4fc; }
+
+        /* ── Fetch status ── */
+        #fetch-status {
+            font-size: 12px; color: #475569; min-height: 16px;
+            text-align: center; transition: all 0.2s;
+        }
+        #fetch-status.error { color: #f87171; }
+        #fetch-status.success { color: #4ade80; }
+
+        /* ── Download type badge ── */
+        #download-type-badge {
+            display: none;
+            align-items: center; gap: 6px;
+            padding: 6px 10px; border-radius: 8px;
+            background: rgba(251,191,36,0.1);
+            border: 1px solid rgba(251,191,36,0.2);
+            font-size: 11px; font-weight: 600; color: #fbbf24;
+        }
+
+        /* ── Progress Area ── */
+        #status-area {
+            display: none;
+            flex-direction: column; gap: 10px;
+            padding: 14px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.07);
             border-radius: 12px;
-            font-size: 14px;
-            font-weight: 600;
-            color: #2d5a55;
-            border: 1px solid #d4f2ef;
-            background: #e6f9f7;
-            cursor: pointer;
-            transition: all 0.2s;
-            text-align: center;
         }
-        .btn-secondary:hover {
-            background: #c3f5f0;
+        .status-header { display:flex; justify-content:space-between; align-items:center; }
+        .status-label { font-size: 11px; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0.8px; }
+        #status-text { font-size: 13px; font-weight:600; color:#cbd5e1; }
+        #status-text.success { color:#4ade80; }
+        #status-text.error { color:#f87171; }
+
+        .progress-row { display:flex; justify-content:space-between; align-items:center; font-size:12px; }
+        .progress-wrapper {
+            height: 6px; border-radius: 3px;
+            background: rgba(255,255,255,0.07);
+            overflow:hidden;
         }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #4f46e5, #8b5cf6);
+            width: 0%; border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+        .progress-bar.indeterminate {
+            width: 40% !important;
+            animation: indeterminate 1.2s ease-in-out infinite;
+        }
+        @keyframes indeterminate {
+            0%   { transform: translateX(-100%); }
+            100% { transform: translateX(350%); }
+        }
+
+        .stats-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; }
+        .stat-box {
+            background: rgba(255,255,255,0.04); border-radius:8px;
+            padding: 8px; text-align:center;
+        }
+        .stat-label { font-size:9px; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0.8px; display:block; margin-bottom:3px; }
+        .stat-value { font-size:13px; font-weight:600; color:#94a3b8; }
+
+        /* ── History panel ── */
+        #historyPanel { display:none; flex-direction:column; gap:12px; }
+        .history-header { display:flex; justify-content:space-between; align-items:center; }
+        .history-header h4 { font-size:14px; font-weight:700; color:#f1f5f9; }
+        #historyList { display:flex; flex-direction:column; gap:8px; max-height:350px; overflow-y:auto; padding-right:2px; }
+        #historyList::-webkit-scrollbar { width:4px; }
+        #historyList::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.1); border-radius:4px; }
+        .history-item {
+            padding: 12px; border-radius: 10px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.07);
+            display:flex; flex-direction:column; gap:6px;
+            position:relative; transition: border-color 0.15s;
+        }
+        .history-item:hover { border-color: rgba(99,102,241,0.3); }
+        .history-item-name { font-size:12px; font-weight:600; color:#cbd5e1; padding-right:22px; word-break:break-all; }
+        .history-item-meta { display:flex; justify-content:space-between; align-items:center; font-size:10px; color:#475569; }
+        .badge { padding:2px 7px; border-radius:20px; font-size:9px; font-weight:700; text-transform:uppercase; }
+        .badge-finished { background:rgba(34,197,94,0.15); color:#4ade80; }
+        .badge-stopped  { background:rgba(239,68,68,0.12); color:#f87171; }
+        .badge-failed   { background:rgba(239,68,68,0.12); color:#f87171; }
+        .history-item-actions { display:flex; gap:6px; }
+        .history-action-btn {
+            background:none; border:none; font-size:11px; font-weight:600;
+            color:#475569; cursor:pointer; padding:3px 6px; border-radius:6px;
+            transition: all 0.15s; display:flex; align-items:center; gap:4px; font-family:inherit;
+        }
+        .history-action-btn:hover { background:rgba(255,255,255,0.06); color:#94a3b8; }
+        .history-del-btn {
+            position:absolute; top:8px; right:8px;
+            background:none; border:none; color:#334155;
+            cursor:pointer; font-size:16px; line-height:1;
+            border-radius:50%; padding:2px; transition: all 0.15s;
+        }
+        .history-del-btn:hover { color:#f87171; background:rgba(239,68,68,0.1); }
+        .no-history { text-align:center; color:#334155; font-size:12px; padding:30px 0; }
+
+        /* ── Separator ── */
+        .sep { height:1px; background:rgba(255,255,255,0.05); }
+        .reset-row { display:flex; justify-content:flex-end; }
     `;
 
+    // ──────────────────────────── HTML ───────────────────────────────────
     const html = document.createElement('div');
     html.id = 'container';
     html.innerHTML = `
         <div id="header">
-            <h3>MediaVal</h3>
-            <div class="header-actions">
+            <div class="logo">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 24 24" fill="white"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                </div>
+                <h3>MediaVal</h3>
+            </div>
+            <div class="header-right">
+                <span id="conn-badge">●&nbsp;Offline</span>
                 <button id="historyBtn" class="icon-btn" title="History">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                 </button>
-                <button id="closeBtn" class="icon-btn">&times;</button>
+                <button id="closeBtn" class="icon-btn" title="Close">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
             </div>
         </div>
-        
-        <div class="content" id="mainPanel">
+
+        <!-- ── MAIN PANEL ── -->
+        <div class="panel-body" id="mainPanel">
             <div id="fetch-status"></div>
-            
+
             <div class="field-group">
                 <label>Source URL</label>
-                <input type="text" id="urlInput" placeholder="https://vimeo.com/video/..." />
+                <div class="input-row">
+                    <input type="text" id="urlInput" placeholder="Paste URL or use current page…" />
+                </div>
             </div>
-            
-            <button id="loadBtn" class="btn-main">Fetch Formats</button>
 
-            <div id="downloadControls" style="display: none; flex-direction: column; gap: 18px; width: 100%;">
-                <a id="resetLink">Change Video (Auto-Fetch)</a>
-                
+            <button id="loadBtn" class="btn-primary">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                Fetch &amp; Detect
+            </button>
+
+            <!-- ── download controls (shown after fetch) ── -->
+            <div id="downloadControls" style="display:none; flex-direction:column; gap:14px;">
+
+                <div class="sep"></div>
+
+                <div id="download-type-badge">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <span id="download-type-text">Direct File Download</span>
+                </div>
+
                 <div class="field-group">
                     <label>Save As</label>
-                    <input type="text" id="filenameInput" placeholder="Filename" />
+                    <input type="text" id="filenameInput" placeholder="Filename (without extension)" />
                 </div>
 
                 <div class="field-group">
                     <label>Destination</label>
-                    <div style="display: flex; align-items: center;">
-                        <input type="text" id="pathInput" placeholder="/Downloads/MediaVal/Cinematics" />
-                        <button id="browseBtn" title="Select Folder">
+                    <div class="input-row">
+                        <input type="text" id="pathInput" placeholder="Select folder…" />
+                        <button id="browseBtn" title="Browse folder">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                         </button>
                     </div>
                 </div>
 
-                <div class="row">
-                    <div class="col">
+                <!-- Mode tabs (hidden for direct downloads) -->
+                <div id="mediaOptions">
+                    <div class="field-group" style="gap:8px;">
                         <label>Mode</label>
-                        <select id="modeSelect">
-                            <option value="merge">Video + Audio</option>
-                            <option value="video">Video Only</option>
-                            <option value="audio">Audio Only</option>
-                        </select>
-                    </div>
-                    
-                    <div class="col">
-                        <label>Ext</label>
-                        <select id="formatSelect">
-                            <option value="mp4">.MP4</option>
-                        </select>
+                        <div class="mode-tabs">
+                            <button class="mode-tab active" data-mode="merge">Video + Audio</button>
+                            <button class="mode-tab" data-mode="video">Video Only</button>
+                            <button class="mode-tab" data-mode="audio">Audio Only</button>
+                        </div>
                     </div>
 
-                    <div class="col" id="qualityContainer">
-                        <label>Quality</label>
-                        <select id="qualitySelect">
-                            <option value="best">4K Ultra</option>
+                    <div class="row" style="margin-top:10px;">
+                        <div class="col">
+                            <label>Format</label>
+                            <select id="formatSelect"></select>
+                        </div>
+                        <div class="col" id="qualityCol">
+                            <label>Quality</label>
+                            <select id="qualitySelect"></select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Direct file format (shown for direct downloads) -->
+                <div id="directOptions" style="display:none;">
+                    <div class="col">
+                        <label>File Type</label>
+                        <select id="directFormatSelect">
+                            <option value="auto">Auto (from URL)</option>
+                            <option value="exe">.exe – Windows Installer</option>
+                            <option value="zip">.zip – Archive</option>
+                            <option value="rar">.rar – Archive</option>
+                            <option value="7z">.7z – Archive</option>
+                            <option value="tar">.tar – Archive</option>
+                            <option value="gz">.gz – Archive</option>
+                            <option value="dmg">.dmg – macOS Installer</option>
+                            <option value="apk">.apk – Android App</option>
+                            <option value="iso">.iso – Disk Image</option>
+                            <option value="pdf">.pdf – Document</option>
+                            <option value="msi">.msi – Windows Installer</option>
+                            <option value="deb">.deb – Linux Package</option>
+                            <option value="rpm">.rpm – Linux Package</option>
                         </select>
                     </div>
                 </div>
 
-                <button id="startBtn" class="btn-main">
-                    Download Now 
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <div class="reset-row">
+                    <button id="resetLink" class="link-btn">↺ Reset &amp; Change URL</button>
+                </div>
+
+                <button id="startBtn" class="btn-primary">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Download Now
                 </button>
-                
-                <button id="stopBtn" class="btn-main">Stop Download</button>
 
-                <div id="status-area" style="width: 100%;">
+                <button id="stopBtn" class="btn-danger">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                    Stop
+                </button>
+
+                <div id="status-area">
                     <div class="status-header">
-                        <span class="status-title">STATUS</span>
-                        <span class="encrypted-badge">Encrypted</span>
+                        <span class="status-label">Status</span>
+                        <span id="status-text">Ready</span>
                     </div>
-                    
-                    <div class="progress-container">
-                        <div class="progress-text-row">
-                            <span id="status">Ready</span>
-                            <span id="percent-val">0%</span>
-                        </div>
-                        <div class="progress-wrapper">
-                            <div class="progress-bar" id="progressBar"></div>
-                        </div>
+                    <div class="progress-row">
+                        <span style="font-size:10px;color:#475569;" id="progress-phase"></span>
+                        <span style="font-size:12px;font-weight:700;color:#818cf8;" id="percent-val">0%</span>
                     </div>
-
-                    <div class="stats-grid">
-                        <div class="stat-box"><span class="stat-label">Size</span><span id="size" class="stat-value">-</span></div>
-                        <div class="divider"></div>
-                        <div class="stat-box"><span class="stat-label">Speed</span><span id="speed" class="stat-value">-</span></div>
-                        <div class="divider"></div>
-                        <div class="stat-box"><span class="stat-label">ETA</span><span id="eta" class="stat-value">-</span></div>
+                    <div class="progress-wrapper">
+                        <div class="progress-bar" id="progressBar"></div>
+                    </div>
+                    <div class="stats-row">
+                        <div class="stat-box">
+                            <span class="stat-label">Size</span>
+                            <span class="stat-value" id="stat-size">—</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Speed</span>
+                            <span class="stat-value" id="stat-speed">—</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">ETA</span>
+                            <span class="stat-value" id="stat-eta">—</span>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div class="content" id="historyPanel">
+        <!-- ── HISTORY PANEL ── -->
+        <div class="panel-body" id="historyPanel">
             <div class="history-header">
                 <h4>Download History</h4>
-                <button id="clearHistoryBtn" class="text-btn">Clear All</button>
+                <button id="clearHistBtn" class="link-btn" style="color:#f87171;">Clear All</button>
             </div>
             <div id="historyList"></div>
-            <button id="backBtn" class="btn-secondary">Back to Downloader</button>
+            <button id="backBtn" class="btn-secondary">← Back to Downloader</button>
         </div>
     `;
 
     shadow.appendChild(style);
     shadow.appendChild(html);
 
-    let socket;
-    const urlInput = shadow.getElementById('urlInput');
+    // ──────────────────────────── ELEMENT REFS ──────────────────────────
+    const urlInput      = shadow.getElementById('urlInput');
     const filenameInput = shadow.getElementById('filenameInput');
-    const pathInput = shadow.getElementById('pathInput');
-    const browseBtn = shadow.getElementById('browseBtn');
-    const loadBtn = shadow.getElementById('loadBtn');
-    const startBtn = shadow.getElementById('startBtn');
-    const stopBtn = shadow.getElementById('stopBtn');
+    const pathInput     = shadow.getElementById('pathInput');
+    const browseBtn     = shadow.getElementById('browseBtn');
+    const loadBtn       = shadow.getElementById('loadBtn');
+    const startBtn      = shadow.getElementById('startBtn');
+    const stopBtn       = shadow.getElementById('stopBtn');
+    const formatSelect  = shadow.getElementById('formatSelect');
     const qualitySelect = shadow.getElementById('qualitySelect');
-    const modeSelect = shadow.getElementById('modeSelect');
-    const formatSelect = shadow.getElementById('formatSelect');
-    const qualityContainer = shadow.getElementById('qualityContainer');
-    const downloadControls = shadow.getElementById('downloadControls');
-    const resetLink = shadow.getElementById('resetLink');
-    const statusDiv = shadow.getElementById('status');
-    const progressBar = shadow.getElementById('progressBar');
-    const closeBtn = shadow.getElementById('closeBtn');
-    const header = shadow.getElementById('header');
-    const fetchStatus = shadow.getElementById('fetch-status');
+    const qualityCol    = shadow.getElementById('qualityCol');
+    const dlControls    = shadow.getElementById('downloadControls');
+    const resetLink     = shadow.getElementById('resetLink');
+    const fetchStatus   = shadow.getElementById('fetch-status');
+    const statusText    = shadow.getElementById('status-text');
+    const progressBar   = shadow.getElementById('progressBar');
+    const percentVal    = shadow.getElementById('percent-val');
+    const progressPhase = shadow.getElementById('progress-phase');
+    const statusArea    = shadow.getElementById('status-area');
+    const connBadge     = shadow.getElementById('conn-badge');
+    const closeBtn      = shadow.getElementById('closeBtn');
+    const headerEl      = shadow.getElementById('header');
+    const mainPanel     = shadow.getElementById('mainPanel');
+    const historyPanel  = shadow.getElementById('historyPanel');
+    const historyBtn    = shadow.getElementById('historyBtn');
+    const historyList   = shadow.getElementById('historyList');
+    const clearHistBtn  = shadow.getElementById('clearHistBtn');
+    const backBtn       = shadow.getElementById('backBtn');
+    const mediaOptions  = shadow.getElementById('mediaOptions');
+    const directOptions = shadow.getElementById('directOptions');
+    const dlTypeBadge   = shadow.getElementById('download-type-badge');
+    const dlTypeText    = shadow.getElementById('download-type-text');
+    const directFmtSel  = shadow.getElementById('directFormatSelect');
 
-    // History elements
-    const historyBtn = shadow.getElementById('historyBtn');
-    const mainPanel = shadow.getElementById('mainPanel');
-    const historyPanel = shadow.getElementById('historyPanel');
-    const historyList = shadow.getElementById('historyList');
-    const clearHistoryBtn = shadow.getElementById('clearHistoryBtn');
-    const backBtn = shadow.getElementById('backBtn');
+    const modeTabs = shadow.querySelectorAll('.mode-tab');
 
-    // Data for formats
+    // ──────────────────────────── STATE ────────────────────────────────
+    let socket = null;
+    let isDirectDownload = false;
+    let currentMode = 'merge';
+    let retryDelay = 2000;
+    let retryTimer = null;
+
     const videoFormats = ['mp4', 'mkv', 'webm', 'avi', 'mov'];
-    const audioFormats = ['mp3', 'm4a', 'wav', 'opus', 'flac', 'aac'];
+    const audioFormats = ['mp3', 'm4a', 'opus', 'flac', 'wav', 'aac'];
 
-    urlInput.value = window.location.href;
+    // Direct-download-detectable extensions
+    const DIRECT_EXTS = new Set([
+        'exe','zip','rar','7z','tar','gz','bz2','xz','dmg',
+        'apk','iso','pdf','msi','deb','rpm','pkg','cab',
+        'jar','war','ear','AppImage','snap',
+        'mp3','mp4','mkv','avi','mov','webm', // also media served as direct files
+    ]);
 
-    const stopBubbling = (e) => { e.stopPropagation(); };
-    [urlInput, filenameInput, pathInput].forEach(input => {
-        input.addEventListener('keydown', stopBubbling);
-        input.addEventListener('keyup', stopBubbling);
-        input.addEventListener('keypress', stopBubbling);
+    // ──────────────────────────── DRAG ─────────────────────────────────
+    let isDragging = false, startX, startY, origX, origY;
+    headerEl.addEventListener('mousedown', e => {
+        if (e.target.closest('.icon-btn')) return;
+        isDragging = true;
+        startX = e.clientX; startY = e.clientY;
+        const rect = host.getBoundingClientRect();
+        origX = rect.left; origY = rect.top;
+        e.preventDefault();
+    });
+    document.addEventListener('mouseup', () => isDragging = false);
+    document.addEventListener('mousemove', e => {
+        if (!isDragging) return;
+        const dx = e.clientX - startX, dy = e.clientY - startY;
+        host.style.left = (origX + dx) + 'px';
+        host.style.top  = (origY + dy) + 'px';
+        host.style.right = 'auto';
     });
 
-    let isDragging = false, currentX, currentY, initialX, initialY, xOffset = 0, yOffset = 0;
-    header.addEventListener("mousedown", dragStart);
-    document.addEventListener("mouseup", dragEnd);
-    document.addEventListener("mousemove", drag);
-    function dragStart(e) {
-        initialX = e.clientX - xOffset; initialY = e.clientY - yOffset;
-        if (e.target === header || e.target.parentNode === header) isDragging = true;
-    }
-    function dragEnd() { initialX = currentX; initialY = currentY; isDragging = false; }
-    function drag(e) {
-        if (isDragging) {
-            e.preventDefault();
-            currentX = e.clientX - initialX; currentY = e.clientY - initialY;
-            xOffset = currentX; yOffset = currentY;
-            host.style.transform = `translate3d(${currentX}px, ${currentY}px, 0)`;
-        }
-    }
+    // ──────────────────────────── PREVENT KEY BUBBLING ─────────────────
+    [urlInput, filenameInput, pathInput].forEach(el => {
+        ['keydown','keyup','keypress'].forEach(ev => el.addEventListener(ev, e => e.stopPropagation()));
+    });
 
-    function resetUI() {
-        if (stopBtn.style.display === 'flex') return;
-        downloadControls.style.display = 'none';
-        loadBtn.style.display = 'flex';
-        loadBtn.disabled = false;
-        loadBtn.innerHTML = 'Fetch Formats';
-        statusDiv.textContent = 'Ready';
-        statusDiv.className = '';
-        progressBar.style.width = '0%';
-        shadow.getElementById('percent-val').textContent = '0%';
-        shadow.getElementById('speed').textContent = '-';
-        shadow.getElementById('eta').textContent = '-';
-        shadow.getElementById('size').textContent = '-';
-        shadow.getElementById('status-area').style.display = 'none';
-        stopBtn.disabled = false;
-        stopBtn.innerHTML = "Stop Download";
-    }
-
-    function sanitizeFilename(name) {
+    // ──────────────────────────── HELPERS ──────────────────────────────
+    function sanitize(name) {
         return name.replace(/[<>:"/\\|?*\x00-\x1F]/g, '').trim();
     }
 
-    function updateFormatOptions() {
-        formatSelect.innerHTML = '';
-        const mode = modeSelect.value;
-        let options = [];
-
-        if (mode === 'audio') {
-            options = audioFormats;
-            qualityContainer.style.opacity = '0.5';
-            qualityContainer.style.pointerEvents = 'none';
-        } else {
-            options = videoFormats;
-            qualityContainer.style.opacity = '1';
-            qualityContainer.style.pointerEvents = 'auto';
-        }
-
-        options.forEach(ext => {
-            const opt = document.createElement('option');
-            opt.value = ext;
-            opt.textContent = ext.toUpperCase();
-            formatSelect.appendChild(opt);
-        });
+    function setFetchStatus(msg, cls = '') {
+        fetchStatus.textContent = msg;
+        fetchStatus.className = cls;
     }
 
-    modeSelect.addEventListener('change', updateFormatOptions);
+    function setStatusText(msg, cls = '') {
+        statusText.textContent = msg;
+        statusText.className = cls;
+    }
 
-    browseBtn.addEventListener('click', () => {
-        browseBtn.disabled = true;
-        statusDiv.textContent = "Please select a folder...";
-        socket.send(JSON.stringify({ action: "browse_folder" }));
+    function detectDirectDownload(url) {
+        try {
+            const u = new URL(url);
+            const pathname = u.pathname.toLowerCase();
+            const ext = pathname.split('.').pop().split('?')[0];
+            return DIRECT_EXTS.has(ext);
+        } catch { return false; }
+    }
+
+    function getExtFromUrl(url) {
+        try {
+            const u = new URL(url);
+            const pathname = u.pathname.toLowerCase();
+            return pathname.split('.').pop().split('?')[0] || 'bin';
+        } catch { return 'bin'; }
+    }
+
+    function getFilenameFromUrl(url) {
+        try {
+            const u = new URL(url);
+            const parts = u.pathname.split('/');
+            const last = parts[parts.length - 1] || 'download';
+            return decodeURIComponent(last.split('.')[0]) || 'download';
+        } catch { return 'download'; }
+    }
+
+    function updateModeFormatOptions() {
+        formatSelect.innerHTML = '';
+        const formats = currentMode === 'audio' ? audioFormats : videoFormats;
+        formats.forEach(ext => {
+            const o = document.createElement('option');
+            o.value = ext; o.textContent = '.' + ext.toUpperCase();
+            formatSelect.appendChild(o);
+        });
+        qualityCol.classList.toggle('disabled', currentMode === 'audio');
+    }
+
+    function showDownloadControls(direct = false) {
+        isDirectDownload = direct;
+        dlControls.style.display = 'flex';
+        loadBtn.style.display = 'none';
+        mediaOptions.style.display  = direct ? 'none' : 'block';
+        directOptions.style.display = direct ? 'block' : 'none';
+        dlTypeBadge.style.display   = direct ? 'flex' : 'none';
+        statusArea.style.display = 'none';
+        stopBtn.style.display = 'none';
+        startBtn.style.display = 'flex';
+        startBtn.disabled = false;
+        startBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download Now`;
+    }
+
+    function resetUI(full = true) {
+        dlControls.style.display = 'none';
+        loadBtn.style.display = 'flex';
+        loadBtn.disabled = false;
+        loadBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Fetch &amp; Detect`;
+        stopBtn.style.display = 'none';
+        statusArea.style.display = 'none';
+        progressBar.style.width = '0%';
+        progressBar.classList.remove('indeterminate');
+        percentVal.textContent = '0%';
+        setStatusText('Ready');
+        ['stat-size','stat-speed','stat-eta'].forEach(id => shadow.getElementById(id).textContent = '—');
+        if (full) setFetchStatus('');
+    }
+
+    // ──────────────────────────── MODE TABS ────────────────────────────
+    modeTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            modeTabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            currentMode = tab.dataset.mode;
+            updateModeFormatOptions();
+        });
     });
 
-    // --- History functions ---
+    // ──────────────────────────── BROWSE ───────────────────────────────
+    browseBtn.addEventListener('click', () => {
+        if (!socket || socket.readyState !== WebSocket.OPEN) return;
+        browseBtn.disabled = true;
+        socket.send(JSON.stringify({ action: 'browse_folder' }));
+    });
+
+    // ──────────────────────────── RESET ────────────────────────────────
+    resetLink.addEventListener('click', () => {
+        if (stopBtn.style.display === 'flex') return;
+        urlInput.value = window.location.href;
+        resetUI();
+    });
+    urlInput.addEventListener('input', () => {
+        if (dlControls.style.display !== 'none') resetUI(false);
+    });
+
+    // ──────────────────────────── CLOSE ────────────────────────────────
+    closeBtn.addEventListener('click', () => { host.style.display = 'none'; });
+
+    // ──────────────────────────── HISTORY ──────────────────────────────
     function showHistory() {
         mainPanel.style.display = 'none';
         historyPanel.style.display = 'flex';
         historyBtn.classList.add('active');
-        
         if (socket && socket.readyState === WebSocket.OPEN) {
-            historyList.innerHTML = '<div class="no-history">Loading history...</div>';
-            socket.send(JSON.stringify({ action: "get_history" }));
+            historyList.innerHTML = '<div class="no-history">Loading…</div>';
+            socket.send(JSON.stringify({ action: 'get_history' }));
         } else {
-            historyList.innerHTML = '<div class="no-history error-msg">Server disconnected. Cannot load history.</div>';
+            historyList.innerHTML = '<div class="no-history" style="color:#f87171">Server offline</div>';
         }
     }
-
     function hideHistory() {
         historyPanel.style.display = 'none';
         mainPanel.style.display = 'flex';
         historyBtn.classList.remove('active');
     }
-
-    historyBtn.addEventListener('click', () => {
-        if (historyPanel.style.display === 'flex') {
-            hideHistory();
-        } else {
-            showHistory();
-        }
-    });
-
+    historyBtn.addEventListener('click', () => historyPanel.style.display === 'flex' ? hideHistory() : showHistory());
     backBtn.addEventListener('click', hideHistory);
-
-    clearHistoryBtn.addEventListener('click', () => {
-        if (confirm("Are you sure you want to clear all download history?")) {
-            socket.send(JSON.stringify({ action: "clear_history" }));
-        }
+    clearHistBtn.addEventListener('click', () => {
+        if (confirm('Clear all download history?'))
+            socket.send(JSON.stringify({ action: 'clear_history' }));
     });
 
     function renderHistory(history) {
@@ -694,234 +724,394 @@ if (!document.getElementById('ytdlp-downloader-host')) {
             historyList.innerHTML = '<div class="no-history">No downloads yet.</div>';
             return;
         }
-
         history.forEach(item => {
-            const itemEl = document.createElement('div');
-            itemEl.className = 'history-item';
-            
-            let timeStr = '';
-            try {
-                const date = new Date(item.timestamp);
-                timeStr = date.toLocaleString();
-            } catch(e) {
-                timeStr = item.timestamp || '';
-            }
-
-            const badgeClass = `badge-${item.status}`;
-            let badgeLabel = 'Unknown';
-            if (item.status === 'finished') badgeLabel = 'Finished';
-            else if (item.status === 'stopped') badgeLabel = 'Stopped';
-            else if (item.status === 'failed') badgeLabel = 'Failed';
-
-            itemEl.innerHTML = `
-                <button class="history-delete-btn" data-id="${item.id}" title="Delete entry">&times;</button>
-                <div class="history-item-title" title="${item.filename}">${item.filename}</div>
+            const el = document.createElement('div');
+            el.className = 'history-item';
+            const date = item.timestamp ? new Date(item.timestamp).toLocaleString() : '';
+            const badgeClass = `badge-${item.status || 'failed'}`;
+            const badgeLabel = { finished:'Finished', stopped:'Stopped', failed:'Failed' }[item.status] || item.status;
+            el.innerHTML = `
+                <button class="history-del-btn" data-id="${item.id}" title="Remove">✕</button>
+                <div class="history-item-name" title="${item.url}">${item.filename || item.title || item.url}</div>
                 <div class="history-item-meta">
                     <span class="badge ${badgeClass}">${badgeLabel}</span>
-                    <span>${item.size || '-'}</span>
+                    <span>${item.size || ''} &nbsp;${date}</span>
                 </div>
-                <div style="font-size: 10px; color: #8fa6a3; margin-top: 2px;">
-                    ${timeStr}
-                </div>
+                <div class="history-item-actions"></div>
             `;
-
-            const actionsRow = document.createElement('div');
-            actionsRow.className = 'history-item-actions';
-
+            const actionsRow = el.querySelector('.history-item-actions');
             if (item.status === 'finished') {
-                const openFolderBtn = document.createElement('button');
-                openFolderBtn.className = 'history-action-btn';
-                openFolderBtn.innerHTML = `
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                    Show in Folder
-                `;
-                openFolderBtn.addEventListener('click', () => {
-                    socket.send(JSON.stringify({ action: "open_folder", path: item.save_path }));
-                });
-                actionsRow.appendChild(openFolderBtn);
+                const openBtn = document.createElement('button');
+                openBtn.className = 'history-action-btn';
+                openBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> Open Folder`;
+                openBtn.addEventListener('click', () => socket.send(JSON.stringify({ action: 'open_folder', path: item.save_path })));
+                actionsRow.appendChild(openBtn);
             }
-
-            const copyLinkBtn = document.createElement('button');
-            copyLinkBtn.className = 'history-action-btn';
-            copyLinkBtn.innerHTML = `
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
-                Copy URL
-            `;
-            copyLinkBtn.addEventListener('click', () => {
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'history-action-btn';
+            copyBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Copy URL`;
+            copyBtn.addEventListener('click', () => {
                 navigator.clipboard.writeText(item.url).then(() => {
-                    const originalText = copyLinkBtn.innerHTML;
-                    copyLinkBtn.textContent = 'Copied!';
-                    setTimeout(() => { copyLinkBtn.innerHTML = originalText; }, 1500);
+                    const orig = copyBtn.innerHTML;
+                    copyBtn.textContent = '✓ Copied';
+                    setTimeout(() => copyBtn.innerHTML = orig, 1500);
                 });
             });
-            actionsRow.appendChild(copyLinkBtn);
+            actionsRow.appendChild(copyBtn);
 
-            itemEl.appendChild(actionsRow);
-
-            const deleteBtn = itemEl.querySelector('.history-delete-btn');
-            deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const id = deleteBtn.getAttribute('data-id');
-                socket.send(JSON.stringify({ action: "delete_history_item", id: id }));
+            el.querySelector('.history-del-btn').addEventListener('click', () => {
+                socket.send(JSON.stringify({ action: 'delete_history_item', id: item.id }));
             });
-
-            historyList.appendChild(itemEl);
+            historyList.appendChild(el);
         });
     }
 
-    function connect() {
-        if (socket && socket.readyState === WebSocket.OPEN) return;
-        socket = new WebSocket("ws://127.0.0.1:8000/ws");
-
-        socket.onopen = () => fetchStatus.textContent = "Server Connected";
-        socket.onclose = () => fetchStatus.textContent = "Server Disconnected";
-
-        socket.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-
-            if (data.status === "path_selected") {
-                browseBtn.disabled = false;
-                if (data.path) {
-                    pathInput.value = data.path;
-                    fetchStatus.textContent = "Folder updated.";
-                } else {
-                    fetchStatus.textContent = "Selection cancelled.";
-                }
-                setTimeout(() => { fetchStatus.textContent = ""; }, 2000);
-            }
-            else if (data.status === "formats_loaded") {
-                qualitySelect.innerHTML = "";
-                const bestOpt = document.createElement('option');
-                bestOpt.value = "best"; bestOpt.textContent = "Best Quality";
-                qualitySelect.appendChild(bestOpt);
-                data.resolutions.forEach(res => {
-                    const opt = document.createElement('option');
-                    opt.value = res; opt.textContent = `${res}p`;
-                    qualitySelect.appendChild(opt);
-                });
-                filenameInput.value = sanitizeFilename(data.title);
-                pathInput.value = data.default_path;
-
-                updateFormatOptions();
-
-                loadBtn.style.display = "none";
-                downloadControls.style.display = "flex";
-                startBtn.style.display = "flex";
-                fetchStatus.textContent = "";
-                statusDiv.textContent = "Configure and Download";
-            }
-            else if (data.status === "downloading") {
-                startBtn.style.display = "none";
-                stopBtn.style.display = "flex";
-                stopBtn.disabled = false;
-                shadow.getElementById('status-area').style.display = 'block';
-                statusDiv.textContent = data.custom_status || "Downloading...";
-                progressBar.style.width = data.percent + "%";
-                shadow.getElementById('percent-val').textContent = data.percent + "%";
-                shadow.getElementById('speed').textContent = data.speed;
-                shadow.getElementById('eta').textContent = data.eta;
-                shadow.getElementById('size').textContent = data.size;
-            }
-            else if (data.status === "finished") {
-                statusDiv.textContent = "Download Complete!";
-                statusDiv.className = '';
-                statusDiv.classList.add('success-msg');
-                progressBar.style.width = "100%";
-                stopBtn.style.display = "none";
-                startBtn.style.display = "block";
-                startBtn.textContent = "Download Another";
-            }
-            else if (data.status === "stopped") {
-                statusDiv.textContent = "Cancelled by User";
-                statusDiv.className = '';
-                statusDiv.classList.add('error-msg');
-                progressBar.style.width = "0%";
-                stopBtn.style.display = "none";
-                startBtn.style.display = "block";
-                startBtn.textContent = "Retry Download";
-            }
-            else if (data.status === "error") {
-                fetchStatus.textContent = data.message;
-                fetchStatus.className = '';
-                fetchStatus.classList.add('error-msg');
-                loadBtn.disabled = false;
-                loadBtn.innerHTML = "Fetch Formats";
-            }
-            else if (data.status === "file_check_result") {
-                if (data.exists) {
-                    if (!confirm("A file with this name already exists in the destination folder. Do you want to overwrite it?")) {
-                        statusDiv.textContent = "Configure and Download";
-                        return;
-                    }
-                }
-                statusDiv.textContent = "Starting...";
-                socket.send(JSON.stringify({
-                    action: "start",
-                    url: urlInput.value,
-                    quality: qualitySelect.value,
-                    mode: modeSelect.value,
-                    format: formatSelect.value,
-                    filename: filenameInput.value,
-                    path: pathInput.value
-                }));
-            }
-            else if (data.status === "history_data") {
-                renderHistory(data.history);
-            }
-        };
-    }
-
+    // ──────────────────────────── FETCH ────────────────────────────────
     function fetchFormats() {
-        fetchStatus.textContent = "Fetching formats, please wait...";
-        fetchStatus.className = '';
+        const url = urlInput.value.trim();
+        if (!url) { setFetchStatus('Please enter a URL', 'error'); return; }
+
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            setFetchStatus('Server not connected. Retrying…', 'error');
+            connectWS();
+            return;
+        }
+
+        // Check if it's a direct downloadable file
+        if (detectDirectDownload(url)) {
+            const ext = getExtFromUrl(url);
+            const name = getFilenameFromUrl(url);
+            filenameInput.value = sanitize(name);
+            pathInput.value = pathInput.value || '';
+            // Pre-select format in direct select
+            const opt = [...directFmtSel.options].find(o => o.value === ext);
+            if (opt) directFmtSel.value = ext;
+            else directFmtSel.value = 'auto';
+            dlTypeText.textContent = `Direct Download  (.${ext})`;
+            socket.send(JSON.stringify({ action: 'get_default_path' }));
+            showDownloadControls(true);
+            setFetchStatus('');
+            return;
+        }
+
+        // Otherwise use yt-dlp
+        setFetchStatus('Fetching formats…');
         loadBtn.disabled = true;
-        loadBtn.innerHTML = "Fetching...";
-        socket.send(JSON.stringify({ action: "get_formats", url: urlInput.value }));
+        loadBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0"/></svg> Fetching…`;
+        socket.send(JSON.stringify({ action: 'get_formats', url }));
     }
 
     loadBtn.addEventListener('click', fetchFormats);
 
+    // ──────────────────────────── START DOWNLOAD ───────────────────────
     startBtn.addEventListener('click', () => {
-        statusDiv.textContent = "Checking file...";
-        socket.send(JSON.stringify({
-            action: "check_file",
-            format: formatSelect.value,
-            filename: filenameInput.value,
-            path: pathInput.value
-        }));
+        const url      = urlInput.value.trim();
+        const filename = sanitize(filenameInput.value.trim()) || 'download';
+        const path     = pathInput.value.trim();
+        if (!path) { setFetchStatus('Please select a destination folder', 'error'); return; }
+
+        if (isDirectDownload) {
+            let ext = directFmtSel.value;
+            if (ext === 'auto') ext = getExtFromUrl(url);
+            socket.send(JSON.stringify({
+                action: 'direct_download', url, filename, path, ext
+            }));
+        } else {
+            socket.send(JSON.stringify({
+                action: 'check_file',
+                format: formatSelect.value,
+                filename, path
+            }));
+        }
+        statusArea.style.display = 'flex';
+        setStatusText('Checking…');
     });
 
     stopBtn.addEventListener('click', () => {
         stopBtn.disabled = true;
-        stopBtn.textContent = "Stopping...";
-        statusDiv.textContent = "Stopping process...";
-        socket.send(JSON.stringify({ action: "stop" }));
+        stopBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg> Stopping…`;
+        socket.send(JSON.stringify({ action: 'stop' }));
     });
 
-    resetLink.addEventListener('click', () => {
-        if (stopBtn.style.display === 'block') return;
-        urlInput.value = window.location.href;
-        resetUI();
-        fetchFormats();
-    });
+    // ──────────────────────────── WEBSOCKET ────────────────────────────
+    function connectWS() {
+        if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
 
-    urlInput.addEventListener('input', resetUI);
-    closeBtn.addEventListener('click', () => host.style.display = 'none');
+        connBadge.textContent = '● Connecting';
+        connBadge.className = 'connecting';
 
-    chrome.runtime.onMessage.addListener((request) => {
-        if (request.action === "toggle_ui") {
-            if (host.style.display === "none") {
-                host.style.display = "block";
-                if (urlInput.value !== window.location.href) {
-                    urlInput.value = window.location.href;
-                    resetUI();
-                }
-                connect();
-            } else {
-                host.style.display = "none";
+        socket = new WebSocket('ws://127.0.0.1:8000/ws');
+
+        socket.onopen = () => {
+            connBadge.textContent = '● Online';
+            connBadge.className = 'connected';
+            retryDelay = 2000;
+            if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+            // Retrieve last path
+            socket.send(JSON.stringify({ action: 'get_default_path' }));
+        };
+
+        socket.onclose = () => {
+            connBadge.textContent = '● Offline';
+            connBadge.className = '';
+            retryTimer = setTimeout(connectWS, retryDelay);
+            retryDelay = Math.min(retryDelay * 1.5, 30000);
+        };
+
+        socket.onerror = () => socket.close();
+
+        socket.onmessage = e => {
+            let data;
+            try { data = JSON.parse(e.data); } catch { return; }
+
+            switch (data.status) {
+                case 'default_path':
+                    if (data.path && !pathInput.value) pathInput.value = data.path;
+                    break;
+
+                case 'path_selected':
+                    browseBtn.disabled = false;
+                    if (data.path) {
+                        pathInput.value = data.path;
+                        setFetchStatus('Folder updated', 'success');
+                    } else {
+                        setFetchStatus('Selection cancelled');
+                    }
+                    setTimeout(() => setFetchStatus(''), 2000);
+                    break;
+
+                case 'formats_loaded':
+                    qualitySelect.innerHTML = '';
+                    const bestOpt = document.createElement('option');
+                    bestOpt.value = 'best'; bestOpt.textContent = 'Best Quality';
+                    qualitySelect.appendChild(bestOpt);
+                    (data.resolutions || []).forEach(res => {
+                        const o = document.createElement('option');
+                        o.value = res; o.textContent = res + 'p';
+                        qualitySelect.appendChild(o);
+                    });
+                    filenameInput.value = sanitize(data.title || 'video');
+                    if (data.default_path) pathInput.value = data.default_path;
+                    updateModeFormatOptions();
+                    showDownloadControls(false);
+                    setFetchStatus('');
+                    break;
+
+                case 'downloading':
+                    startBtn.style.display = 'none';
+                    stopBtn.style.display = 'flex';
+                    stopBtn.disabled = false;
+                    statusArea.style.display = 'flex';
+                    progressBar.classList.remove('indeterminate');
+                    const pct = parseFloat(data.percent) || 0;
+                    progressBar.style.width = pct + '%';
+                    percentVal.textContent = pct.toFixed(1) + '%';
+                    progressPhase.textContent = data.custom_status || '';
+                    setStatusText(data.custom_status || 'Downloading…');
+                    shadow.getElementById('stat-speed').textContent = data.speed || '—';
+                    shadow.getElementById('stat-eta').textContent   = data.eta   || '—';
+                    shadow.getElementById('stat-size').textContent  = data.size  || '—';
+                    break;
+
+                case 'direct_progress':
+                    startBtn.style.display = 'none';
+                    stopBtn.style.display = 'flex';
+                    stopBtn.disabled = false;
+                    statusArea.style.display = 'flex';
+                    if (data.percent != null && data.percent >= 0) {
+                        progressBar.classList.remove('indeterminate');
+                        progressBar.style.width = data.percent + '%';
+                        percentVal.textContent = data.percent.toFixed(1) + '%';
+                    } else {
+                        progressBar.classList.add('indeterminate');
+                        percentVal.textContent = '…';
+                    }
+                    shadow.getElementById('stat-speed').textContent = data.speed || '—';
+                    shadow.getElementById('stat-size').textContent  = data.size  || '—';
+                    setStatusText('Downloading file…');
+                    break;
+
+                case 'finished':
+                    progressBar.style.width = '100%';
+                    progressBar.classList.remove('indeterminate');
+                    percentVal.textContent = '100%';
+                    stopBtn.style.display = 'none';
+                    startBtn.style.display = 'flex';
+                    startBtn.innerHTML = `
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                        Done – Download Another`;
+                    setStatusText('Download complete!', 'success');
+                    break;
+
+                case 'stopped':
+                    stopBtn.style.display = 'none';
+                    startBtn.style.display = 'flex';
+                    startBtn.innerHTML = `
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Retry Download`;
+                    setStatusText('Cancelled', 'error');
+                    progressBar.style.width = '0%';
+                    percentVal.textContent = '0%';
+                    break;
+
+                case 'error':
+                    loadBtn.style.display = 'flex';
+                    loadBtn.disabled = false;
+                    loadBtn.innerHTML = `
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        Fetch &amp; Detect`;
+                    dlControls.style.display = 'none';
+                    stopBtn.style.display = 'none';
+                    startBtn.style.display = 'flex';
+                    setFetchStatus('Error: ' + (data.message || 'Unknown error'), 'error');
+                    break;
+
+                case 'file_check_result':
+                    if (data.exists) {
+                        if (!confirm('A file with this name already exists. Overwrite?')) {
+                            setStatusText('Cancelled');
+                            return;
+                        }
+                    }
+                    setStatusText('Starting…');
+                    socket.send(JSON.stringify({
+                        action: 'start',
+                        url: urlInput.value.trim(),
+                        quality: qualitySelect.value,
+                        mode: currentMode,
+                        format: formatSelect.value,
+                        filename: sanitize(filenameInput.value.trim()) || 'download',
+                        path: pathInput.value.trim()
+                    }));
+                    break;
+
+                case 'history_data':
+                    renderHistory(data.history);
+                    break;
             }
+        };
+    }
+
+    // ──────────────────────────── TOGGLE ───────────────────────────────
+    chrome.runtime.onMessage.addListener(request => {
+        if (request.action !== 'toggle_ui') return;
+        if (host.style.display === 'none') {
+            host.style.display = 'block';
+            if (!urlInput.value || urlInput.value !== window.location.href)
+                urlInput.value = window.location.href;
+            connectWS();
+        } else {
+            host.style.display = 'none';
         }
     });
 
-    connect();
-}
+    connectWS();
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  VIDEO OVERLAY – detect <video> elements and add a floating ⬇ btn
+    // ═══════════════════════════════════════════════════════════════════
+    const VIDEO_BTN_ATTR = 'data-mediavar-btn';
+
+    const videoOverlayStyle = document.createElement('style');
+    videoOverlayStyle.textContent = `
+        .mediavar-video-wrap { position:relative !important; }
+        .mediavar-dl-btn {
+            position:absolute !important;
+            top:10px !important; right:10px !important;
+            z-index:2147483646 !important;
+            background:rgba(10,10,20,0.75) !important;
+            backdrop-filter:blur(6px) !important;
+            border:1px solid rgba(255,255,255,0.15) !important;
+            border-radius:9px !important;
+            padding:7px 12px !important;
+            display:flex !important; align-items:center !important; gap:6px !important;
+            cursor:pointer !important;
+            color:#fff !important;
+            font:600 12px/1 'Inter',sans-serif !important;
+            opacity:0 !important;
+            transition:opacity 0.2s !important;
+            pointer-events:auto !important;
+            text-decoration:none !important;
+        }
+        .mediavar-dl-btn svg { flex-shrink:0 !important; }
+        .mediavar-video-wrap:hover .mediavar-dl-btn { opacity:1 !important; }
+        .mediavar-dl-btn:hover { background:rgba(99,102,241,0.85) !important; }
+    `;
+    document.head.appendChild(videoOverlayStyle);
+
+    function addVideoButton(video) {
+        if (video.hasAttribute(VIDEO_BTN_ATTR)) return;
+        video.setAttribute(VIDEO_BTN_ATTR, '1');
+
+        // Wrap video if not already in a positioned parent
+        let wrap = video.parentElement;
+        if (!wrap || !['relative','absolute','fixed','sticky'].includes(getComputedStyle(wrap).position)) {
+            wrap = document.createElement('div');
+            wrap.className = 'mediavar-video-wrap';
+            video.parentNode.insertBefore(wrap, video);
+            wrap.appendChild(video);
+        } else {
+            wrap.classList.add('mediavar-video-wrap');
+        }
+
+        const btn = document.createElement('button');
+        btn.className = 'mediavar-dl-btn';
+        btn.title = 'Download with MediaVal';
+        btn.innerHTML = `
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download
+        `;
+        btn.addEventListener('click', e => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            // Determine the best URL: src attribute, currentSrc, or page URL
+            const videoSrc = video.currentSrc || video.src || video.querySelector('source')?.src || '';
+            const targetUrl = videoSrc || window.location.href;
+
+            // Open MediaVal and populate the URL
+            if (host.style.display === 'none') {
+                host.style.display = 'block';
+                connectWS();
+            }
+            urlInput.value = targetUrl;
+            resetUI(true);
+            // Auto-fetch after a tick to ensure WS is alive
+            setTimeout(fetchFormats, 300);
+        });
+
+        wrap.appendChild(btn);
+    }
+
+    function scanVideos() {
+        document.querySelectorAll('video').forEach(v => {
+            if (v.readyState >= 1 || v.currentSrc || v.src)
+                addVideoButton(v);
+        });
+    }
+
+    scanVideos();
+
+    // MutationObserver to catch dynamically added videos
+    const obs = new MutationObserver(mutations => {
+        mutations.forEach(m => {
+            m.addedNodes.forEach(node => {
+                if (node.nodeType !== 1) return;
+                if (node.tagName === 'VIDEO') addVideoButton(node);
+                node.querySelectorAll && node.querySelectorAll('video').forEach(addVideoButton);
+            });
+        });
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+
+    // Also watch for src changes on existing videos
+    document.addEventListener('canplay', e => {
+        if (e.target && e.target.tagName === 'VIDEO') addVideoButton(e.target);
+    }, true);
+
+    // Add spin keyframe
+    const spinStyle = document.createElement('style');
+    spinStyle.textContent = `@keyframes spin { to { transform: rotate(360deg); } }`;
+    shadow.appendChild(spinStyle);
+
+} // end guard

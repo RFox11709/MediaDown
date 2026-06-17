@@ -9,6 +9,7 @@ import yt_dlp
 from pathlib import Path
 import uuid
 from datetime import datetime
+import httpx
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -130,10 +131,10 @@ class DownloadManager:
             # Seamless Progress Logic
             if self.download_phase == 0:
                 seamless_percent = raw_percent / 2 
-                status_msg = "Downloading..."
+                status_msg = "Downloading…"
             else:
                 seamless_percent = 50 + (raw_percent / 2)
-                status_msg = "Processing/Converting..."
+                status_msg = "Processing / Converting…"
 
             if seamless_percent > 99:
                 seamless_percent = 99
@@ -176,7 +177,7 @@ class DownloadManager:
                         "speed": "-",
                         "eta": "-",
                         "size": "-",
-                        "custom_status": "Finalizing (Embedding Metadata)..."
+                        "custom_status": "Finalizing (Embedding Metadata)…"
                     })), self.loop
                 )
             except Exception:
@@ -291,7 +292,7 @@ async def run_downloader(url, quality, mode, format_ext, filename, save_path, we
         await websocket.send_text(json.dumps({
             "status": "downloading", 
             "percent": "0", 
-            "custom_status": "Starting Download...",
+            "custom_status": "Starting Download…",
             "speed": "-", "eta": "-", "size": "-"
         }))
 
@@ -330,6 +331,121 @@ async def run_downloader(url, quality, mode, format_ext, filename, save_path, we
                 pass
             add_history_item(url, filename, f"{filename}.{format_ext}", save_path, "failed")
 
+
+# ─────────────────────────────────────────────────────────
+#  Direct file download (non-yt-dlp: .exe, .zip, .pdf …)
+# ─────────────────────────────────────────────────────────
+def _format_bytes(n):
+    """Human-readable file size."""
+    if n < 1024:
+        return f"{n} B"
+    elif n < 1024 ** 2:
+        return f"{n / 1024:.1f} KiB"
+    elif n < 1024 ** 3:
+        return f"{n / 1024 / 1024:.2f} MiB"
+    else:
+        return f"{n / 1024 / 1024 / 1024:.2f} GiB"
+
+
+async def run_direct_download(url, filename, ext, save_path, websocket, cancellation_event):
+    """Stream-download a file directly via HTTP and report progress over the websocket."""
+
+    if not os.path.exists(save_path):
+        try:
+            os.makedirs(save_path)
+        except Exception as e:
+            await websocket.send_text(json.dumps({"status": "error", "message": f"Cannot create folder: {e}"}))
+            return
+
+    save_last_download_path(save_path)
+
+    dest = os.path.join(save_path, f"{filename}.{ext}")
+    tmp  = dest + ".part"
+
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=httpx.Timeout(30.0, read=300.0)) as client:
+            async with client.stream("GET", url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }) as resp:
+                resp.raise_for_status()
+
+                total = int(resp.headers.get("content-length", 0)) or None
+                downloaded = 0
+                last_report = 0
+                start_time = asyncio.get_event_loop().time()
+
+                with open(tmp, "wb") as f:
+                    async for chunk in resp.aiter_bytes(chunk_size=65536):
+                        if cancellation_event.is_set():
+                            break
+                        f.write(chunk)
+                        downloaded += len(chunk)
+
+                        now = asyncio.get_event_loop().time()
+                        if now - last_report >= 0.35:
+                            last_report = now
+                            elapsed = now - start_time
+                            speed = downloaded / elapsed if elapsed > 0 else 0
+
+                            msg = {
+                                "status": "direct_progress",
+                                "size": _format_bytes(downloaded) + (f" / {_format_bytes(total)}" if total else ""),
+                                "speed": _format_bytes(int(speed)) + "/s",
+                            }
+                            if total:
+                                pct = min(downloaded / total * 100, 99.9)
+                                msg["percent"] = round(pct, 1)
+                            else:
+                                msg["percent"] = -1
+
+                            try:
+                                await websocket.send_text(json.dumps(msg))
+                            except Exception:
+                                break
+
+        if cancellation_event.is_set():
+            # Clean up partial file
+            if os.path.exists(tmp):
+                os.remove(tmp)
+            await websocket.send_text(json.dumps({"status": "stopped"}))
+            add_history_item(url, filename, f"{filename}.{ext}", save_path, "stopped")
+            return
+
+        # Rename .part → final
+        if os.path.exists(dest):
+            os.remove(dest)
+        os.rename(tmp, dest)
+
+        size_str = _format_bytes(os.path.getsize(dest))
+        await websocket.send_text(json.dumps({"status": "finished", "location": save_path}))
+        add_history_item(url, filename, f"{filename}.{ext}", save_path, "finished", size_str)
+
+    except asyncio.CancelledError:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        try:
+            await websocket.send_text(json.dumps({"status": "stopped"}))
+        except Exception:
+            pass
+        add_history_item(url, filename, f"{filename}.{ext}", save_path, "stopped")
+
+    except Exception as e:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        if cancellation_event.is_set():
+            try:
+                await websocket.send_text(json.dumps({"status": "stopped"}))
+            except Exception:
+                pass
+            add_history_item(url, filename, f"{filename}.{ext}", save_path, "stopped")
+        else:
+            try:
+                await websocket.send_text(json.dumps({"status": "error", "message": str(e)}))
+            except Exception:
+                pass
+            add_history_item(url, filename, f"{filename}.{ext}", save_path, "failed")
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -354,6 +470,12 @@ async def websocket_endpoint(websocket: WebSocket):
 
             if action == "get_formats":
                 await get_video_formats(cmd.get("url"), websocket)
+
+            elif action == "get_default_path":
+                await websocket.send_text(json.dumps({
+                    "status": "default_path",
+                    "path": get_last_download_path()
+                }))
 
             elif action == "check_file":
                 format_ext = cmd.get("format", "mp4")
@@ -387,6 +509,17 @@ async def websocket_endpoint(websocket: WebSocket):
                 cancellation_event.clear()
                 current_download_task = asyncio.create_task(
                     run_downloader(url, quality, mode, format_ext, filename, save_path, websocket, cancellation_event)
+                )
+
+            elif action == "direct_download":
+                url = cmd.get("url")
+                filename = cmd.get("filename", "download")
+                ext = cmd.get("ext", "bin")
+                save_path = cmd.get("path", get_last_download_path())
+
+                cancellation_event.clear()
+                current_download_task = asyncio.create_task(
+                    run_direct_download(url, filename, ext, save_path, websocket, cancellation_event)
                 )
 
             elif action == "stop":
