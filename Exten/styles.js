@@ -313,7 +313,7 @@ export const videoOverlayStylesText = `
     .mediavar-video-wrap { position:relative !important; }
     .mediavar-dl-btn {
         position:absolute !important;
-        top:10px !important; right:10px !important;
+        top:10px !important; left:10px !important;
         z-index:2147483646 !important;
         background:rgba(10,10,20,0.75) !important;
         backdrop-filter:blur(6px) !important;
@@ -333,26 +333,17 @@ export const videoOverlayStylesText = `
     .mediavar-video-wrap:hover .mediavar-dl-btn { opacity:1 !important; }
     .mediavar-dl-btn:hover { background:rgba(99,102,241,0.85) !important; }
 
-    /* Alt+Click hint on video link thumbnails */
-    a[data-mediavar-link-logged] {
-        position:relative !important;
+    /* Thumbnail download button (shown on hover of parent thumbnail) */
+    .mediavar-thumb-dl-btn {
+        top:8px !important; left:8px !important;
+        padding:5px 10px !important;
+        border-radius:7px !important;
+        font-size:11px !important;
     }
-    a[data-mediavar-link-logged]::after {
-        content:'Alt+Click → Download' !important;
-        position:absolute !important;
-        bottom:8px !important; left:8px !important;
-        z-index:2147483646 !important;
-        background:rgba(10,10,20,0.8) !important;
-        backdrop-filter:blur(6px) !important;
-        border:1px solid rgba(99,102,241,0.3) !important;
-        border-radius:6px !important;
-        padding:4px 8px !important;
-        color:rgba(165,180,252,0.9) !important;
-        font:600 10px/1 'Inter',sans-serif !important;
-        white-space:nowrap !important;
-        opacity:0 !important;
-        pointer-events:none !important;
-        transition:opacity 0.2s !important;
+    a:hover > .mediavar-thumb-dl-btn,
+    *:hover > a > .mediavar-thumb-dl-btn,
+    ytd-thumbnail:hover .mediavar-thumb-dl-btn,
+    [data-mediavar-thumb-btn]:hover .mediavar-thumb-dl-btn {
+        opacity:1 !important;
     }
-    a[data-mediavar-link-logged]:hover::after { opacity:1 !important; }
-`;
+`;

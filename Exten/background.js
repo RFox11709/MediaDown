@@ -1,6 +1,19 @@
 chrome.action.onClicked.addListener((tab) => {
   chrome.tabs.sendMessage(tab.id, { action: "toggle_ui" }).catch(() => {
-    console.warn("Could not toggle UI. Content script may not be loaded. Try refreshing the page.");
+    // Content script not loaded — inject it, then retry
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ["loader.js"]
+    }).then(() => {
+      // Give the module a moment to initialize
+      setTimeout(() => {
+        chrome.tabs.sendMessage(tab.id, { action: "toggle_ui" }).catch(() => {
+          console.warn("Could not toggle UI even after injection. Try refreshing the page.");
+        });
+      }, 500);
+    }).catch(() => {
+      console.warn("Could not inject content script. Try refreshing the page.");
+    });
   });
 });
 
