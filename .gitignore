@@ -14,3 +14,6 @@ must_have/
 # Runtime / user-specific data
 download_history.json
 settings.json
+
+browser_cookies.txt
+git_error.log
