@@ -332,4 +332,27 @@ export const videoOverlayStylesText = `
     .mediavar-dl-btn svg { flex-shrink:0 !important; }
     .mediavar-video-wrap:hover .mediavar-dl-btn { opacity:1 !important; }
     .mediavar-dl-btn:hover { background:rgba(99,102,241,0.85) !important; }
+
+    /* Alt+Click hint on video link thumbnails */
+    a[data-mediavar-link-logged] {
+        position:relative !important;
+    }
+    a[data-mediavar-link-logged]::after {
+        content:'Alt+Click → Download' !important;
+        position:absolute !important;
+        bottom:8px !important; left:8px !important;
+        z-index:2147483646 !important;
+        background:rgba(10,10,20,0.8) !important;
+        backdrop-filter:blur(6px) !important;
+        border:1px solid rgba(99,102,241,0.3) !important;
+        border-radius:6px !important;
+        padding:4px 8px !important;
+        color:rgba(165,180,252,0.9) !important;
+        font:600 10px/1 'Inter',sans-serif !important;
+        white-space:nowrap !important;
+        opacity:0 !important;
+        pointer-events:none !important;
+        transition:opacity 0.2s !important;
+    }
+    a[data-mediavar-link-logged]:hover::after { opacity:1 !important; }
 `;
