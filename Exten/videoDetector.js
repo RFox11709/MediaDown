@@ -85,7 +85,18 @@ export function initVideoDetector(host, urlInput, resetUI, fetchFormats, connect
         if (!['relative', 'absolute', 'fixed', 'sticky'].includes(pos)) {
             wrap.style.position = 'relative';
         }
-        wrap.classList.add('mediavar-video-wrap');
+        // Add hover class to ancestors up to 4 levels to bypass transparent overlays (IG/TikTok),
+        // stopping if an ancestor contains multiple videos (to prevent grid hover issues).
+        let current = wrap;
+        for (let i = 0; i < 4; i++) {
+            if (!current || current.tagName === 'BODY') break;
+            if (current.querySelectorAll('video').length > 1) {
+                current.classList.remove('mediavar-video-wrap');
+                break;
+            }
+            current.classList.add('mediavar-video-wrap');
+            current = current.parentElement;
+        }
 
         const btn = document.createElement('button');
         btn.className = 'mediavar-dl-btn';
