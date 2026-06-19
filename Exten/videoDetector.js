@@ -6,6 +6,9 @@ const LINK_LOGGED_ATTR = 'data-mediavar-link-logged';
 // Cache of video element → resolved URL (populated by hover tracker)
 const hoverUrlCache = new WeakMap();
 
+// Universal selector for video links (YouTube, TikTok, Instagram, etc.)
+const VIDEO_LINK_SELECTOR = 'a[href*="/watch"], a[href*="/shorts/"], a[href*="/video/"], a[href*="/reel/"], a[href*="/p/"]';
+
 export function initVideoDetector(host, urlInput, resetUI, fetchFormats, connectWS) {
     // Append layout style
     const videoOverlayStyle = document.createElement('style');
@@ -18,9 +21,7 @@ export function initVideoDetector(host, urlInput, resetUI, fetchFormats, connect
     let lastHoveredUrl = null;
 
     document.addEventListener('mouseover', (e) => {
-        const videoLink = e.target.closest(
-            'a[href*="/watch"], a[href*="/shorts/"], a[href*="/video/"]'
-        );
+        const videoLink = e.target.closest(VIDEO_LINK_SELECTOR);
         if (!videoLink) return;
 
         const href = videoLink.getAttribute('href');
@@ -51,9 +52,7 @@ export function initVideoDetector(host, urlInput, resetUI, fetchFormats, connect
     document.addEventListener('click', (e) => {
         if (!e.altKey) return;
 
-        const videoLink = e.target.closest(
-            'a[href*="/watch"], a[href*="/shorts/"], a[href*="/video/"]'
-        );
+        const videoLink = e.target.closest(VIDEO_LINK_SELECTOR);
         if (!videoLink) return;
 
         e.preventDefault();
@@ -129,9 +128,7 @@ export function initVideoDetector(host, urlInput, resetUI, fetchFormats, connect
                 '[data-video-id], .video-card, .video-item, article'
             );
             if (container) {
-                const link = container.querySelector(
-                    'a[href*="/watch"], a[href*="/shorts/"], a[href*="/video/"]'
-                );
+                const link = container.querySelector(VIDEO_LINK_SELECTOR);
                 if (link) {
                     const linkUrl = new URL(link.getAttribute('href'), window.location.origin).href;
                     if (linkUrl === lastHoveredUrl) return lastHoveredUrl;
@@ -160,9 +157,7 @@ export function initVideoDetector(host, urlInput, resetUI, fetchFormats, connect
         // 6. Walk up DOM looking for a video link
         let parent = vid.parentElement;
         while (parent && parent !== document.body) {
-            const a = parent.querySelector(
-                'a[href*="/watch"], a[href*="/shorts/"], a[href*="/video/"]'
-            );
+            const a = parent.querySelector(VIDEO_LINK_SELECTOR);
             if (a && a.href) return a.href;
             parent = parent.parentElement;
         }
@@ -192,9 +187,7 @@ export function initVideoDetector(host, urlInput, resetUI, fetchFormats, connect
         if (renderer.hasAttribute(THUMB_BTN_ATTR)) return;
 
         // Must contain a link to a video
-        const link = renderer.querySelector(
-            'a[href*="/watch"], a[href*="/shorts/"]'
-        );
+        const link = renderer.querySelector(VIDEO_LINK_SELECTOR);
         if (!link) return;
 
         // Find the thumbnail container (the <a> wrapping the <img>)
