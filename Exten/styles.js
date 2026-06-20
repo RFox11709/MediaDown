@@ -328,10 +328,19 @@ export const videoOverlayStylesText = `
         transition:opacity 0.2s !important;
         pointer-events:auto !important;
         text-decoration:none !important;
+        transform:none !important;
+        scale:1 !important;
+        margin:0 !important;
+        box-sizing:border-box !important;
+        min-width:max-content !important;
     }
-    .mediavar-dl-btn svg { flex-shrink:0 !important; }
+    .mediavar-dl-btn svg { flex-shrink:0 !important; transform:none !important; }
     .mediavar-video-wrap:hover .mediavar-dl-btn { opacity:1 !important; }
-    .mediavar-dl-btn:hover { background:rgba(99,102,241,0.85) !important; }
+    .mediavar-dl-btn:hover { 
+        background:rgba(99,102,241,0.85) !important; 
+        transform:none !important;
+        scale:1 !important;
+    }
 
     /* Thumbnail download button (shown on hover of parent thumbnail) */
     .mediavar-thumb-dl-btn {
