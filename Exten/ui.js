@@ -158,6 +158,17 @@ export const htmlTemplate = `
         </div>
         <div id="historyList"></div>
         <button id="backBtn" class="btn-secondary">← Back to Downloader</button>
+        <!-- ── Intercept Download Prompt ── -->
+        <div id="interceptPrompt" style="display:none; position:absolute; inset:0; background:rgba(0,0,0,0.85); z-index:9999; flex-direction:column; justify-content:center; align-items:center; padding:20px; text-align:center;">
+            <div style="background:#2C2F36; padding:20px; border-radius:12px; width:100%; box-shadow:0 10px 30px rgba(0,0,0,0.5);">
+                <h3 style="margin-top:0; color:#fff; font-size:16px;">Intercept Download?</h3>
+                <p id="interceptFilename" style="color:#A0A5B1; font-size:13px; word-break:break-all; margin:10px 0 20px;">filename.ext</p>
+                <div style="display:flex; gap:10px;">
+                    <button id="interceptBtnYes" class="btn-primary" style="flex:1;">Intercept</button>
+                    <button id="interceptBtnNo" class="btn-secondary" style="flex:1;">Let Chrome Download</button>
+                </div>
+            </div>
+        </div>
     </div>
 `;
 

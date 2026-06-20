@@ -40,6 +40,11 @@ const dlTypeText = shadow.getElementById('download-type-text');
 const directFmtSel = shadow.getElementById('directFormatSelect');
 const modeTabs = shadow.querySelectorAll('.mode-tab');
 
+const interceptPrompt = shadow.getElementById('interceptPrompt');
+const interceptFilename = shadow.getElementById('interceptFilename');
+const interceptBtnYes = shadow.getElementById('interceptBtnYes');
+const interceptBtnNo = shadow.getElementById('interceptBtnNo');
+
 // ──────────────────────────── STATE ────────────────────────────────
 let socket = null;
 let isDirectDownload = false;
@@ -420,16 +425,58 @@ function connectWS() {
 }
 
 // ──────────────────────────── MESSAGE RECEIVER ──────────────────────
-chrome.runtime.onMessage.addListener(request => {
-    if (request.action !== 'toggle_ui') return;
-    if (host.style.display === 'none') {
-        host.style.display = 'block';
-        if (!urlInput.value || urlInput.value !== window.location.href) {
-            urlInput.value = window.location.href;
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'toggle_ui') {
+        if (host.style.display === 'none') {
+            host.style.display = 'block';
+            if (!urlInput.value || urlInput.value !== window.location.href) {
+                urlInput.value = window.location.href;
+            }
+            connectWS();
+        } else {
+            host.style.display = 'none';
         }
+    } else if (request.action === 'intercept_download_prompt') {
+        // Show prompt
+        if (host.style.display === 'none') {
+            host.style.display = 'block';
+        }
+        interceptPrompt.style.display = 'flex';
+        interceptFilename.textContent = request.item.filename;
+        
+        const cleanup = () => {
+            interceptPrompt.style.display = 'none';
+            interceptBtnYes.onclick = null;
+            interceptBtnNo.onclick = null;
+        };
+
+        interceptBtnYes.onclick = () => {
+            cleanup();
+            sendResponse({ intercept: true });
+        };
+        interceptBtnNo.onclick = () => {
+            cleanup();
+            sendResponse({ intercept: false });
+        };
+        
+        return true; // Keep channel open
+    } else if (request.action === 'trigger_direct_download') {
+        // Trigger a direct download now that we intercepted it
+        if (host.style.display === 'none') host.style.display = 'block';
         connectWS();
-    } else {
-        host.style.display = 'none';
+        
+        urlInput.value = request.url;
+        const namePart = request.filename.split('.').slice(0, -1).join('.') || request.filename;
+        filenameInput.value = namePart;
+        
+        // Show UI setup as a direct download
+        resetUI(true);
+        showDownloadControls(true);
+        dlTypeText.textContent = 'Intercepted File Download';
+        const ext = request.filename.split('.').pop() || 'download';
+        directFmtSel.innerHTML = `<option value="${ext}">.${ext.toUpperCase()}</option>`;
+        
+        setStatusText('Ready to save intercepted file.', 'success');
     }
 });
 

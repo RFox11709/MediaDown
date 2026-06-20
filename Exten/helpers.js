@@ -4,6 +4,7 @@ export const DIRECT_EXTS = new Set([
     'apk', 'iso', 'pdf', 'msi', 'deb', 'rpm', 'pkg', 'cab',
     'jar', 'war', 'ear', 'AppImage', 'snap',
     'mp3', 'mp4', 'mkv', 'avi', 'mov', 'webm', // also media served as direct files
+    'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp' // image formats
 ]);
 
 export function sanitize(name) {

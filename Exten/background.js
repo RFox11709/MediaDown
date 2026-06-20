@@ -62,3 +62,52 @@ function connectToDevServer() {
 // Start connection monitor
 connectToDevServer();
 
+// --- Chrome Download Interception ---
+chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
+  // Ignore data/blob URLs
+  if (downloadItem.url.startsWith('blob:') || downloadItem.url.startsWith('data:')) {
+    suggest();
+    return false;
+  }
+
+  // Ask the active tab if we should intercept
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (!tabs || tabs.length === 0) {
+      suggest();
+      return;
+    }
+    const activeTab = tabs[0];
+    
+    // Inject content script if missing, then send message
+    chrome.scripting.executeScript({
+      target: { tabId: activeTab.id },
+      files: ["loader.js"]
+    }).then(() => {
+      chrome.tabs.sendMessage(activeTab.id, {
+        action: 'intercept_download_prompt',
+        item: downloadItem
+      }, (response) => {
+        if (chrome.runtime.lastError || !response) {
+          suggest();
+          return;
+        }
+        
+        if (response.intercept) {
+          chrome.downloads.cancel(downloadItem.id);
+          // Tell the content script to trigger direct download via UI
+          chrome.tabs.sendMessage(activeTab.id, {
+            action: 'trigger_direct_download',
+            url: downloadItem.url,
+            filename: downloadItem.filename
+          });
+        } else {
+          suggest();
+        }
+      });
+    }).catch(() => {
+      suggest();
+    });
+  });
+
+  return true; // indicates asynchronous suggest
+});
