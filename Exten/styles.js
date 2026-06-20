@@ -355,4 +355,4 @@ export const videoOverlayStylesText = `
     [data-mediavar-thumb-btn]:hover .mediavar-thumb-dl-btn {
         opacity:1 !important;
     }
-`;
+`;

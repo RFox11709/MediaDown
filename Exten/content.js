@@ -331,6 +331,9 @@ function connectWS() {
                     // Video/Audio mode
                     shadow.getElementById('modeFieldGroup').style.display = 'flex';
                     
+                    const activeTab = shadow.querySelector('.mode-tab.active');
+                    currentMode = activeTab ? activeTab.dataset.mode : 'merge';
+                    
                     const bestOpt = document.createElement('option');
                     bestOpt.value = 'best'; bestOpt.textContent = 'Best Quality';
                     qualitySelect.appendChild(bestOpt);
