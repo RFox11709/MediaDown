@@ -303,19 +303,51 @@ function connectWS() {
 
             case 'formats_loaded':
                 qualitySelect.innerHTML = '';
-                const bestOpt = document.createElement('option');
-                bestOpt.value = 'best'; bestOpt.textContent = 'Best Quality';
-                qualitySelect.appendChild(bestOpt);
-                (data.resolutions || []).forEach(res => {
-                    const o = document.createElement('option');
-                    o.value = res; o.textContent = res + 'p';
-                    qualitySelect.appendChild(o);
-                });
-                filenameInput.value = helpers.sanitize(data.title || 'video');
+                formatSelect.innerHTML = '';
+                
+                if (data.type === 'image') {
+                    // Image/Gallery mode
+                    currentMode = 'image';
+                    const bestOpt = document.createElement('option');
+                    bestOpt.value = 'best'; bestOpt.textContent = 'Original Quality';
+                    qualitySelect.appendChild(bestOpt);
+                    
+                    const fmtOpt = document.createElement('option');
+                    fmtOpt.value = 'jpg'; fmtOpt.textContent = 'Original Format';
+                    formatSelect.appendChild(fmtOpt);
+                    
+                    qualityCol.classList.remove('disabled');
+                    filenameInput.value = helpers.sanitize(data.title || 'image');
+                    
+                    // Show some visual indicator for gallery if count > 1
+                    if (data.count > 1) {
+                        setFetchStatus(`Found ${data.count} images in gallery`, 'success');
+                    } else {
+                        setFetchStatus('');
+                    }
+                } else {
+                    // Video/Audio mode
+                    const bestOpt = document.createElement('option');
+                    bestOpt.value = 'best'; bestOpt.textContent = 'Best Quality';
+                    qualitySelect.appendChild(bestOpt);
+                    (data.resolutions || []).forEach(res => {
+                        const o = document.createElement('option');
+                        o.value = res; o.textContent = res + 'p';
+                        qualitySelect.appendChild(o);
+                    });
+                    filenameInput.value = helpers.sanitize(data.title || 'video');
+                    updateModeFormatOptions();
+                    setFetchStatus('');
+                }
+                
                 if (data.default_path) pathInput.value = data.default_path;
-                updateModeFormatOptions();
                 showDownloadControls(false);
-                setFetchStatus('');
+                
+                // Switch active tab visually if image
+                if (data.type === 'image') {
+                    modeTabs.forEach(t => t.classList.remove('active'));
+                    // We don't have an "image" tab, so we just deselect or we can add one later
+                }
                 break;
 
             case 'downloading':

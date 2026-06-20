@@ -6,8 +6,8 @@ const LINK_LOGGED_ATTR = 'data-mediavar-link-logged';
 // Cache of video element → resolved URL (populated by hover tracker)
 const hoverUrlCache = new WeakMap();
 
-// Universal selector for video links (YouTube, TikTok, Instagram, etc.)
-const VIDEO_LINK_SELECTOR = 'a[href*="/watch"], a[href*="/shorts/"], a[href*="/video/"], a[href*="/reel/"], a[href*="/p/"]';
+// Universal selector for video links (YouTube, TikTok, Instagram, Pinterest etc.)
+const VIDEO_LINK_SELECTOR = 'a[href*="/watch"], a[href*="/shorts/"], a[href*="/video/"], a[href*="/reel/"], a[href*="/p/"], a[href*="/pin/"]';
 
 export function initVideoDetector(host, urlInput, resetUI, fetchFormats, connectWS) {
     // Append layout style
@@ -331,9 +331,58 @@ export function initVideoDetector(host, urlInput, resetUI, fetchFormats, connect
         badges.forEach(addGenericVideoThumb);
     }
 
+    function scanImagePosts() {
+        // Find links that look like Pinterest pins or Instagram posts
+        const imagePostSelectors = 'a[href*="/pin/"], a[href*="/p/"]';
+        document.querySelectorAll(imagePostSelectors).forEach(link => {
+            if (link.hasAttribute(GENERIC_THUMB_ATTR) || link.hasAttribute(THUMB_BTN_ATTR)) return;
+            
+            // On Pinterest, pins are links wrapping an image.
+            const img = link.querySelector('img');
+            if (!img) return; // Only target those with an actual image
+            
+            // Optional: Skip very small images (icons)
+            if (img.width > 0 && img.width < 50) return;
+
+            link.setAttribute(GENERIC_THUMB_ATTR, '1');
+
+            const pos = getComputedStyle(link).position;
+            if (!['relative', 'absolute', 'fixed', 'sticky'].includes(pos)) {
+                link.style.position = 'relative';
+            }
+
+            const btn = document.createElement('button');
+            btn.className = 'mediavar-dl-btn mediavar-thumb-dl-btn';
+            btn.title = 'Download with MediaVal';
+            btn.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download
+            `;
+
+            btn.addEventListener('click', e => {
+                e.preventDefault();
+                e.stopPropagation();
+
+                let href = link.getAttribute('href');
+                const fullUrl = new URL(href, window.location.origin).href;
+
+                if (host.style.display === 'none') {
+                    host.style.display = 'block';
+                    connectWS();
+                }
+                urlInput.value = fullUrl;
+                resetUI(true);
+                setTimeout(fetchFormats, 300);
+            });
+
+            link.appendChild(btn);
+        });
+    }
+
     function scanThumbnails() {
         document.querySelectorAll(YT_RENDERERS).forEach(addThumbnailButton);
         scanGenericVideoThumbs();
+        scanImagePosts();
     }
 
     scanVideos();
@@ -350,11 +399,10 @@ export function initVideoDetector(host, urlInput, resetUI, fetchFormats, connect
                 if (node.tagName === 'VIDEO') addVideoButton(node);
                 if (node.querySelectorAll) {
                     node.querySelectorAll('video').forEach(addVideoButton);
-                    // YouTube thumbnail renderers
-                    if (node.matches && node.matches(YT_RENDERERS)) {
-                        addThumbnailButton(node);
+                    // Fast check for thumbnails in new chunks
+                    if (node.querySelector(YT_RENDERERS) || node.matches(YT_RENDERERS) || node.querySelector('a[href*="/pin/"]')) {
+                        setTimeout(scanThumbnails, 100);
                     }
-                    node.querySelectorAll(YT_RENDERERS).forEach(addThumbnailButton);
                 }
             });
         });

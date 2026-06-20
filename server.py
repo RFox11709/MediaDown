@@ -10,6 +10,7 @@ from pathlib import Path
 import uuid
 from datetime import datetime
 import httpx
+import subprocess
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -235,6 +236,37 @@ async def get_video_formats(url, cookies, websocket):
             }))
             
     except Exception as e:
+        # Fallback to gallery-dl if yt-dlp fails (e.g. for images/galleries)
+        try:
+            result = subprocess.run(["gallery-dl", "-j", url], capture_output=True, text=True, timeout=20)
+            if result.returncode == 0 and result.stdout.strip():
+                data = []
+                for line in result.stdout.strip().split('\n'):
+                    try:
+                        parsed = json.loads(line)
+                        if isinstance(parsed, list) and len(parsed) > 0 and isinstance(parsed[0], list):
+                            # The outer is a list of lists: [[3, {...}]]
+                            for item in parsed:
+                                if len(item) > 1 and isinstance(item[1], dict):
+                                    data.append(item[1])
+                    except:
+                        pass
+                
+                if data:
+                    info = data[0]
+                    title = info.get("seo_title") or info.get("title") or info.get("author") or "Image/Gallery Download"
+                    await websocket.send_text(json.dumps({
+                        "status": "formats_loaded",
+                        "type": "image",
+                        "count": len(data),
+                        "resolutions": ["Original"],
+                        "title": title,
+                        "default_path": get_last_download_path()
+                    }))
+                    return
+        except Exception:
+            pass
+
         await websocket.send_text(json.dumps({"status": "error", "message": str(e)}))
 
 async def run_downloader(url, quality, mode, format_ext, filename, save_path, cookies, websocket, cancellation_event):
@@ -249,6 +281,55 @@ async def run_downloader(url, quality, mode, format_ext, filename, save_path, co
 
     # Save the selected path to settings.json
     save_last_download_path(save_path)
+
+    if mode == "image":
+        try:
+            await websocket.send_text(json.dumps({
+                "status": "downloading", 
+                "percent": "50", 
+                "custom_status": "Downloading Image(s) via gallery-dl…",
+                "speed": "-", "eta": "-", "size": "-"
+            }))
+            
+            # Use gallery-dl for download
+            # outtmpl: save_path / filename . ext
+            # If there's multiple, gallery-dl appends numbers automatically if we use formatting
+            dest_tmpl = os.path.join(save_path, f"{filename}.%(ext)s")
+            
+            cmd = ["gallery-dl", "-D", save_path, "-f", f"{filename}.{{extension}}", url]
+            
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            # Wait for completion or cancellation
+            while True:
+                if cancellation_event.is_set():
+                    process.terminate()
+                    await process.wait()
+                    await websocket.send_text(json.dumps({"status": "stopped"}))
+                    add_history_item(url, filename, filename, save_path, "stopped")
+                    return
+                
+                if process.stdout.at_eof() and process.stderr.at_eof():
+                    break
+                    
+                await asyncio.sleep(0.1)
+                
+            stdout, stderr = await process.communicate()
+            
+            if process.returncode == 0:
+                await websocket.send_text(json.dumps({"status": "finished", "location": save_path}))
+                add_history_item(url, filename, filename, save_path, "finished", "Image")
+            else:
+                await websocket.send_text(json.dumps({"status": "error", "message": "gallery-dl failed"}))
+                add_history_item(url, filename, filename, save_path, "failed")
+                
+        except Exception as e:
+            await websocket.send_text(json.dumps({"status": "error", "message": str(e)}))
+        return
 
     out_tmpl = os.path.join(save_path, f"{filename}.%(ext)s")
 
