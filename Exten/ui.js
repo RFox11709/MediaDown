@@ -62,7 +62,7 @@ export const htmlTemplate = `
 
             <!-- Mode tabs (hidden for direct downloads) -->
             <div id="mediaOptions">
-                <div class="field-group" style="gap:8px;">
+                <div class="field-group" style="gap:8px;" id="modeFieldGroup">
                     <label>Mode</label>
                     <div class="mode-tabs">
                         <button class="mode-tab active" data-mode="merge">Video + Audio</button>

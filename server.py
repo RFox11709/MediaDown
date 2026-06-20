@@ -285,16 +285,13 @@ async def run_downloader(url, quality, mode, format_ext, filename, save_path, co
         try:
             await websocket.send_text(json.dumps({
                 "status": "downloading", 
-                "percent": "50", 
+                "percent": "-1", 
                 "custom_status": "Downloading Image(s) via gallery-dl…",
                 "speed": "-", "eta": "-", "size": "-"
             }))
             
             # Use gallery-dl for download
-            # outtmpl: save_path / filename . ext
-            # If there's multiple, gallery-dl appends numbers automatically if we use formatting
             dest_tmpl = os.path.join(save_path, f"{filename}.%(ext)s")
-            
             cmd = ["gallery-dl", "-D", save_path, "-f", f"{filename}.{{extension}}", url]
             
             process = await asyncio.create_subprocess_exec(
@@ -304,20 +301,17 @@ async def run_downloader(url, quality, mode, format_ext, filename, save_path, co
             )
             
             # Wait for completion or cancellation
-            while True:
+            task = asyncio.create_task(process.communicate())
+            while not task.done():
                 if cancellation_event.is_set():
                     process.terminate()
                     await process.wait()
                     await websocket.send_text(json.dumps({"status": "stopped"}))
                     add_history_item(url, filename, filename, save_path, "stopped")
                     return
-                
-                if process.stdout.at_eof() and process.stderr.at_eof():
-                    break
-                    
                 await asyncio.sleep(0.1)
                 
-            stdout, stderr = await process.communicate()
+            stdout, stderr = task.result()
             
             if process.returncode == 0:
                 await websocket.send_text(json.dumps({"status": "finished", "location": save_path}))

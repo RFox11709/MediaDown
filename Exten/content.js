@@ -308,6 +308,8 @@ function connectWS() {
                 if (data.type === 'image') {
                     // Image/Gallery mode
                     currentMode = 'image';
+                    shadow.getElementById('modeFieldGroup').style.display = 'none';
+                    
                     const bestOpt = document.createElement('option');
                     bestOpt.value = 'best'; bestOpt.textContent = 'Original Quality';
                     qualitySelect.appendChild(bestOpt);
@@ -327,6 +329,8 @@ function connectWS() {
                     }
                 } else {
                     // Video/Audio mode
+                    shadow.getElementById('modeFieldGroup').style.display = 'flex';
+                    
                     const bestOpt = document.createElement('option');
                     bestOpt.value = 'best'; bestOpt.textContent = 'Best Quality';
                     qualitySelect.appendChild(bestOpt);
@@ -355,10 +359,17 @@ function connectWS() {
                 stopBtn.style.display = 'flex';
                 stopBtn.disabled = false;
                 statusArea.style.display = 'flex';
-                progressBar.classList.remove('indeterminate');
+                
                 const pct = parseFloat(data.percent) || 0;
-                progressBar.style.width = pct + '%';
-                percentVal.textContent = pct.toFixed(1) + '%';
+                if (pct >= 0) {
+                    progressBar.classList.remove('indeterminate');
+                    progressBar.style.width = pct + '%';
+                    percentVal.textContent = pct.toFixed(1) + '%';
+                } else {
+                    progressBar.classList.add('indeterminate');
+                    percentVal.textContent = '…';
+                }
+                
                 progressPhase.textContent = data.custom_status || '';
                 setStatusText(data.custom_status || 'Downloading…');
                 shadow.getElementById('stat-speed').textContent = data.speed || '—';
