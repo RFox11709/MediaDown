@@ -241,16 +241,15 @@ async def get_video_formats(url, cookies, websocket):
             result = subprocess.run(["gallery-dl", "-j", url], capture_output=True, text=True, timeout=20)
             if result.returncode == 0 and result.stdout.strip():
                 data = []
-                for line in result.stdout.strip().split('\n'):
-                    try:
-                        parsed = json.loads(line)
-                        if isinstance(parsed, list) and len(parsed) > 0 and isinstance(parsed[0], list):
-                            # The outer is a list of lists: [[3, {...}]]
-                            for item in parsed:
-                                if len(item) > 1 and isinstance(item[1], dict):
-                                    data.append(item[1])
-                    except:
-                        pass
+                try:
+                    parsed_array = json.loads(result.stdout.strip())
+                    if isinstance(parsed_array, list):
+                        # The outer is a list of lists: [[3, {...}], [3, {...}]]
+                        for item in parsed_array:
+                            if isinstance(item, list) and len(item) > 1 and isinstance(item[1], dict):
+                                data.append(item[1])
+                except Exception:
+                    pass
                 
                 if data:
                     info = data[0]
