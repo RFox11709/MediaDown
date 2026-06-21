@@ -227,7 +227,7 @@ def write_cookies_txt(cookies_list):
                 f.write(f"{domain}\t{include_subdomains}\t{path}\t{secure}\t{expiration}\t{name}\t{value}\n")
         return cookie_path
     except Exception:
-   
+        return None
 # ─── URL classification helpers ────────────────────────────────────────────
 # Sites that yt-dlp handles well → skip gallery-dl entirely
 _YTDLP_DOMAINS = {
@@ -440,7 +440,6 @@ async def get_video_formats(url, cookies, websocket):
         if not ok:
             await websocket.send_text(json.dumps({"status": "error", "message": "Could not detect media. The URL may be a direct file, private, or unsupported."}))
 
-essage": str(e)}))
 
 async def run_downloader(url, quality, mode, format_ext, filename, save_path, cookies, websocket, cancellation_event):
     manager = DownloadManager(websocket, cancellation_event)
