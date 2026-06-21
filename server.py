@@ -478,36 +478,49 @@ async def run_downloader(url, quality, mode, format_ext, filename, save_path, co
             }))
             
             # Use gallery-dl for download
-            dest_tmpl = os.path.join(save_path, f"{filename}.%(ext)s")
             cmd = ["gallery-dl", "-D", save_path, "-f", f"{filename}.{{extension}}", url]
+            print(f"[IMAGE DL] Running: {cmd}")
             
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
+            loop = asyncio.get_running_loop()
+            
+            def run_gallery_dl():
+                # We use subprocess.run so we can check the return code and capture output
+                return subprocess.run(cmd, capture_output=True, text=True)
+            
+            # Run gallery-dl in a separate thread so it doesn't block the async event loop
+            task = asyncio.create_task(loop.run_in_executor(None, run_gallery_dl))
             
             # Wait for completion or cancellation
-            task = asyncio.create_task(process.communicate())
             while not task.done():
                 if cancellation_event.is_set():
-                    process.terminate()
-                    await process.wait()
+                    task.cancel() # Note: this doesn't kill the underlying thread/process, but stops waiting
                     await websocket.send_text(json.dumps({"status": "stopped"}))
                     add_history_item(url, filename, filename, save_path, "stopped")
                     return
                 await asyncio.sleep(0.1)
                 
-            stdout, stderr = task.result()
+            try:
+                result = task.result()
+                returncode = result.returncode
+                stdout_str = result.stdout
+                stderr_str = result.stderr
+            except asyncio.CancelledError:
+                returncode = -1
+                stdout_str = ""
+                stderr_str = "Cancelled"
             
-            if process.returncode == 0:
+            if returncode == 0:
                 await websocket.send_text(json.dumps({"status": "finished", "location": save_path}))
                 add_history_item(url, filename, filename, save_path, "finished", "Image")
             else:
-                await websocket.send_text(json.dumps({"status": "error", "message": "gallery-dl failed"}))
+                err_msg = stderr_str.strip() if stderr_str else "gallery-dl failed"
+                print(f"[IMAGE DL] gallery-dl failed (rc={returncode}): {err_msg}")
+                await websocket.send_text(json.dumps({"status": "error", "message": err_msg or "gallery-dl failed"}))
                 add_history_item(url, filename, filename, save_path, "failed")
                 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             await websocket.send_text(json.dumps({"status": "error", "message": str(e)}))
         return
 
@@ -794,8 +807,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 save_path = cmd.get("path", get_last_download_path())
                 cookies = cmd.get("cookies", [])
                 
-                # Add cookies to ydl_opts via run_downloader signature change if needed
-                # Wait, I need to pass cookies to run_downloader
+                print(f"[START] url={url}, mode={mode}, format={format_ext}, quality={quality}, filename={filename}, path={save_path}")
                 cancellation_event.clear()
                 current_download_task = asyncio.create_task(
                     run_downloader(url, quality, mode, format_ext, filename, save_path, cookies, websocket, cancellation_event)

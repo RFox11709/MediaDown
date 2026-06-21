@@ -353,7 +353,6 @@ function connectWS() {
                     
                     filenameInput.value = helpers.sanitize(data.title || 'image');
                     updateModeFormatOptions();
-                    
                     // Show some visual indicator for gallery if count > 1
                     if (data.count > 1) {
                         setFetchStatus(`Found ${data.count} images in gallery`, 'success');
@@ -365,13 +364,9 @@ function connectWS() {
                     const activeTab = shadow.querySelector('.mode-tab.active');
                     currentMode = (activeTab && activeTab.dataset.mode !== 'image') ? activeTab.dataset.mode : 'merge';
                     
-                    // Show video/audio tabs, hide image tab
+                    // Show all tabs so the user can manually switch to Image/Gallery if they want
                     modeTabs.forEach(t => {
-                        if (t.dataset.mode === 'image') {
-                            t.style.display = 'none';
-                        } else {
-                            t.style.display = 'block';
-                        }
+                        t.style.display = 'block';
                     });
                     
                     lastResolutions = data.resolutions || [];
