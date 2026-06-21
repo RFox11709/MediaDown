@@ -51,6 +51,7 @@ let isDirectDownload = false;
 let currentMode = 'merge';
 let retryDelay = 2000;
 let retryTimer = null;
+let lastResolutions = [];
 
 const videoFormats = ['mp4', 'mkv', 'webm', 'avi', 'mov'];
 const audioFormats = ['mp3', 'm4a', 'opus', 'flac', 'wav', 'aac'];
@@ -73,12 +74,38 @@ function setStatusText(msg, cls = '') {
 
 function updateModeFormatOptions() {
     formatSelect.innerHTML = '';
+    qualitySelect.innerHTML = '';
+
+    if (currentMode === 'image') {
+        const oFmt = document.createElement('option');
+        oFmt.value = 'auto'; oFmt.textContent = 'Original Format';
+        formatSelect.appendChild(oFmt);
+
+        const oQual = document.createElement('option');
+        oQual.value = 'best'; oQual.textContent = 'Original Quality';
+        qualitySelect.appendChild(oQual);
+
+        qualityCol.classList.remove('disabled');
+        return;
+    }
+
     const formats = currentMode === 'audio' ? audioFormats : videoFormats;
     formats.forEach(ext => {
         const o = document.createElement('option');
         o.value = ext; o.textContent = '.' + ext.toUpperCase();
         formatSelect.appendChild(o);
     });
+
+    const bestOpt = document.createElement('option');
+    bestOpt.value = 'best'; bestOpt.textContent = 'Best Quality';
+    qualitySelect.appendChild(bestOpt);
+
+    lastResolutions.forEach(res => {
+        const o = document.createElement('option');
+        o.value = res; o.textContent = res + 'p';
+        qualitySelect.appendChild(o);
+    });
+
     qualityCol.classList.toggle('disabled', currentMode === 'audio');
 }
 
@@ -286,6 +313,10 @@ function connectWS() {
         try { data = JSON.parse(e.data); } catch { return; }
 
         switch (data.status) {
+            case 'detecting':
+                setFetchStatus(data.message || 'Detecting media type…');
+                break;
+
             case 'default_path':
                 if (data.path && !pathInput.value) pathInput.value = data.path;
                 break;
@@ -305,21 +336,14 @@ function connectWS() {
                 qualitySelect.innerHTML = '';
                 formatSelect.innerHTML = '';
                 
+                shadow.getElementById('modeFieldGroup').style.display = 'flex';
+
                 if (data.type === 'image') {
                     // Image/Gallery mode
                     currentMode = 'image';
-                    shadow.getElementById('modeFieldGroup').style.display = 'none';
                     
-                    const bestOpt = document.createElement('option');
-                    bestOpt.value = 'best'; bestOpt.textContent = 'Original Quality';
-                    qualitySelect.appendChild(bestOpt);
-                    
-                    const fmtOpt = document.createElement('option');
-                    fmtOpt.value = 'jpg'; fmtOpt.textContent = 'Original Format';
-                    formatSelect.appendChild(fmtOpt);
-                    
-                    qualityCol.classList.remove('disabled');
                     filenameInput.value = helpers.sanitize(data.title || 'image');
+                    updateModeFormatOptions();
                     
                     // Show some visual indicator for gallery if count > 1
                     if (data.count > 1) {
@@ -329,19 +353,10 @@ function connectWS() {
                     }
                 } else {
                     // Video/Audio mode
-                    shadow.getElementById('modeFieldGroup').style.display = 'flex';
-                    
                     const activeTab = shadow.querySelector('.mode-tab.active');
-                    currentMode = activeTab ? activeTab.dataset.mode : 'merge';
+                    currentMode = (activeTab && activeTab.dataset.mode !== 'image') ? activeTab.dataset.mode : 'merge';
                     
-                    const bestOpt = document.createElement('option');
-                    bestOpt.value = 'best'; bestOpt.textContent = 'Best Quality';
-                    qualitySelect.appendChild(bestOpt);
-                    (data.resolutions || []).forEach(res => {
-                        const o = document.createElement('option');
-                        o.value = res; o.textContent = res + 'p';
-                        qualitySelect.appendChild(o);
-                    });
+                    lastResolutions = data.resolutions || [];
                     filenameInput.value = helpers.sanitize(data.title || 'video');
                     updateModeFormatOptions();
                     setFetchStatus('');
@@ -350,11 +365,10 @@ function connectWS() {
                 if (data.default_path) pathInput.value = data.default_path;
                 showDownloadControls(false);
                 
-                // Switch active tab visually if image
-                if (data.type === 'image') {
-                    modeTabs.forEach(t => t.classList.remove('active'));
-                    // We don't have an "image" tab, so we just deselect or we can add one later
-                }
+                // Switch active tab visually
+                modeTabs.forEach(t => t.classList.remove('active'));
+                const targetTab = Array.from(modeTabs).find(t => t.dataset.mode === currentMode);
+                if (targetTab) targetTab.classList.add('active');
                 break;
 
             case 'downloading':

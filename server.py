@@ -120,6 +120,21 @@ class DownloadManager:
 
         if d['status'] == 'finished':
             self.download_phase += 1
+            # Send a transition message so UI doesn't appear stuck at 50%
+            if self.download_phase == 1:
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        self.websocket.send_text(json.dumps({
+                            "status": "downloading",
+                            "percent": "50",
+                            "speed": "-",
+                            "eta": "-",
+                            "size": "-",
+                            "custom_status": "Downloading audio…"
+                        })), self.loop
+                    )
+                except Exception:
+                    pass
             return
 
         if d['status'] == 'downloading':
@@ -170,15 +185,25 @@ class DownloadManager:
             raise Exception("Download Cancelled by User")
 
         if d['status'] == 'started':
+            # Animate progress from wherever it is to ~98% during post-processing
+            status_msgs = {
+                'FFmpegMergerPP': 'Merging video & audio…',
+                'FFmpegExtractAudioPP': 'Converting audio…',
+                'FFmpegVideoConvertorPP': 'Converting video…',
+                'FFmpegMetadataPP': 'Writing metadata…',
+                'EmbedThumbnailPP': 'Embedding thumbnail…',
+            }
+            pp_name = d.get('postprocessor', 'FFmpegMergerPP')
+            status_msg = status_msgs.get(pp_name, 'Finalizing…')
             try:
                 asyncio.run_coroutine_threadsafe(
                     self.websocket.send_text(json.dumps({
                         "status": "downloading",
-                        "percent": "99.5",
+                        "percent": "99",
                         "speed": "-",
                         "eta": "-",
                         "size": "-",
-                        "custom_status": "Finalizing (Embedding Metadata)…"
+                        "custom_status": status_msg
                     })), self.loop
                 )
             except Exception:
@@ -202,71 +227,220 @@ def write_cookies_txt(cookies_list):
                 f.write(f"{domain}\t{include_subdomains}\t{path}\t{secure}\t{expiration}\t{name}\t{value}\n")
         return cookie_path
     except Exception:
-        return None
+   
+# ─── URL classification helpers ────────────────────────────────────────────
+# Sites that yt-dlp handles well → skip gallery-dl entirely
+_YTDLP_DOMAINS = {
+    'youtube.com', 'youtu.be', 'm.youtube.com',
+    'twitch.tv', 'clips.twitch.tv',
+    'twitter.com', 'x.com', 't.co',
+    'tiktok.com', 'vm.tiktok.com',
+    'vimeo.com', 'player.vimeo.com',
+    'dailymotion.com', 'dai.ly',
+    'reddit.com', 'v.redd.it', 'redd.it',
+    'bilibili.com', 'b23.tv',
+    'nico.ms', 'nicovideo.jp',
+    'streamable.com',
+    'facebook.com', 'fb.watch',
+    'instagram.com',      # yt-dlp handles reels; gallery-dl handles posts
+    'soundcloud.com',
+    'bandcamp.com',
+    'mixcloud.com',
+    'rumble.com',
+    'odysee.com', 'lbry.tv',
+    'kick.com',
+    'crunchyroll.com',
+    'nebula.tv',
+}
 
-async def get_video_formats(url, cookies, websocket):
+# Sites that are gallery/image platforms → skip yt-dlp, go straight to gallery-dl
+_GALLERY_DOMAINS = {
+    'pinterest.com', 'pin.it', 'pinterest.co.uk', 'pinterest.fr',
+    'imgur.com', 'i.imgur.com',
+    'flickr.com',
+    'artstation.com',
+    'deviantart.com',
+    'danbooru.donmai.us', 'safebooru.org', 'gelbooru.com', 'rule34.xxx',
+    'pixiv.net',
+    'weibo.com',
+    'tumblr.com',
+    'giphy.com',
+    'gfycat.com',
+    '500px.com',
+    'vsco.co',
+    'unsplash.com',
+    'pexels.com',
+    'yandex.com',         # Yandex Images
+    'e-hentai.org', 'exhentai.org',
+    'konachan.com', 'yande.re',
+}
+
+# Image file extensions → direct fetch / gallery-dl
+_IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif', '.bmp', '.tiff', '.tif', '.svg', '.heic', '.heif'}
+
+def _classify_url(url: str) -> str:
+    """Return 'video', 'gallery', 'image_file', or 'unknown'."""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url.lower())
+        host = parsed.netloc.lstrip('www.')
+
+        # Strip port if present
+        host = host.split(':')[0]
+
+        # Check for direct image file extension
+        path = parsed.path.split('?')[0]
+        ext = os.path.splitext(path)[1]
+        if ext in _IMAGE_EXTS:
+            return 'image_file'
+
+        # Exact domain match or subdomain match
+        for domain in _YTDLP_DOMAINS:
+            if host == domain or host.endswith('.' + domain):
+                return 'video'
+
+        for domain in _GALLERY_DOMAINS:
+            if host == domain or host.endswith('.' + domain):
+                return 'gallery'
+
+    except Exception:
+        pass
+    return 'unknown'
+
+async def _try_ytdlp(url, cookies, websocket) -> bool:
+    """Try yt-dlp. Returns True on success (sends formats_loaded), False on failure."""
     try:
         ydl_opts = {
             'quiet': True, 'no_warnings': True, 'force_ipv4': True, 'noplaylist': True,
             'socket_timeout': 15,
             'ffmpeg_location': SCRIPT_DIR,
         }
-        
         cookie_file = write_cookies_txt(cookies)
         if cookie_file:
             ydl_opts['cookiefile'] = cookie_file
-            
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             loop = asyncio.get_running_loop()
             info = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=False))
-            
-            formats = info.get('formats', [])
-            resolutions = set()
-            for f in formats:
-                if f.get('height') and f.get('vcodec') != 'none':
-                    resolutions.add(f['height'])
-            
-            sorted_res = sorted(list(resolutions), reverse=True)
-            
-            await websocket.send_text(json.dumps({
-                "status": "formats_loaded",
-                "resolutions": sorted_res,
-                "title": info.get('title', 'Unknown Title'),
-                "default_path": get_last_download_path()
-            }))
-            
-    except Exception as e:
-        # Fallback to gallery-dl if yt-dlp fails (e.g. for images/galleries)
-        try:
-            result = subprocess.run(["gallery-dl", "-j", url], capture_output=True, text=True, timeout=20)
-            if result.returncode == 0 and result.stdout.strip():
-                data = []
-                try:
-                    parsed_array = json.loads(result.stdout.strip())
-                    if isinstance(parsed_array, list):
-                        # The outer is a list of lists: [[3, {...}], [3, {...}]]
-                        for item in parsed_array:
-                            if isinstance(item, list) and len(item) > 1 and isinstance(item[1], dict):
-                                data.append(item[1])
-                except Exception:
-                    pass
-                
-                if data:
-                    info = data[0]
-                    title = info.get("seo_title") or info.get("title") or info.get("author") or "Image/Gallery Download"
-                    await websocket.send_text(json.dumps({
-                        "status": "formats_loaded",
-                        "type": "image",
-                        "count": len(data),
-                        "resolutions": ["Original"],
-                        "title": title,
-                        "default_path": get_last_download_path()
-                    }))
-                    return
-        except Exception:
-            pass
 
-        await websocket.send_text(json.dumps({"status": "error", "message": str(e)}))
+        formats = info.get('formats', [])
+        resolutions = set()
+        for f in formats:
+            if f.get('height') and f.get('vcodec') != 'none':
+                resolutions.add(f['height'])
+
+        await websocket.send_text(json.dumps({
+            "status": "formats_loaded",
+            "resolutions": sorted(list(resolutions), reverse=True),
+            "title": info.get('title', 'Unknown Title'),
+            "default_path": get_last_download_path()
+        }))
+        return True
+    except Exception:
+        return False
+
+async def _try_gallery_dl(url, cookies, websocket) -> bool:
+    """Try gallery-dl. Returns True on success (sends formats_loaded), False on failure."""
+    try:
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(["gallery-dl", "-j", url], capture_output=True, text=True, timeout=20)
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return False
+
+        data = []
+        try:
+            parsed_array = json.loads(result.stdout.strip())
+            if isinstance(parsed_array, list):
+                for item in parsed_array:
+                    if isinstance(item, list) and len(item) > 1 and isinstance(item[1], dict):
+                        data.append(item[1])
+        except Exception:
+            return False
+
+        if not data:
+            return False
+
+        info = data[0]
+        title = info.get("seo_title") or info.get("title") or info.get("author") or "Image/Gallery Download"
+        await websocket.send_text(json.dumps({
+            "status": "formats_loaded",
+            "type": "image",
+            "count": len(data),
+            "resolutions": ["Original"],
+            "title": title,
+            "default_path": get_last_download_path()
+        }))
+        return True
+    except Exception:
+        return False
+
+async def _try_direct_image(url, cookies, websocket) -> bool:
+    """For direct image URLs: send formats_loaded immediately as an image type."""
+    try:
+        from urllib.parse import urlparse, unquote
+        parsed = urlparse(url)
+        raw_name = os.path.basename(parsed.path.split('?')[0])
+        title = unquote(raw_name) or "image"
+        await websocket.send_text(json.dumps({
+            "status": "formats_loaded",
+            "type": "image",
+            "count": 1,
+            "resolutions": ["Original"],
+            "title": title,
+            "default_path": get_last_download_path()
+        }))
+        return True
+    except Exception:
+        return False
+
+async def get_video_formats(url, cookies, websocket):
+    """Detect media type and route to the best downloader without unnecessary retries."""
+    kind = _classify_url(url)
+
+    # Send a status hint so the user sees something immediately
+    await websocket.send_text(json.dumps({
+        "status": "detecting",
+        "message": "Detecting media type…"
+    }))
+
+    if kind == 'video':
+        # yt-dlp only – no gallery-dl fallback needed for dedicated video platforms
+        ok = await _try_ytdlp(url, cookies, websocket)
+        if not ok:
+            # Some video platforms also host images (e.g. Reddit) – try gallery-dl once
+            ok = await _try_gallery_dl(url, cookies, websocket)
+        if not ok:
+            await websocket.send_text(json.dumps({"status": "error", "message": "Could not detect media (yt-dlp failed). The URL may be private or unsupported."}))
+
+    elif kind == 'gallery':
+        # gallery-dl first, then yt-dlp as a backup (e.g. Imgur video GIFs)
+        ok = await _try_gallery_dl(url, cookies, websocket)
+        if not ok:
+            ok = await _try_ytdlp(url, cookies, websocket)
+        if not ok:
+            await websocket.send_text(json.dumps({"status": "error", "message": "Could not detect media (gallery-dl failed). The URL may be private or unsupported."}))
+
+    elif kind == 'image_file':
+        # Direct image file – no need to invoke any external tool for detection
+        ok = await _try_direct_image(url, cookies, websocket)
+        if not ok:
+            # Fallback to gallery-dl just in case
+            ok = await _try_gallery_dl(url, cookies, websocket)
+        if not ok:
+            await websocket.send_text(json.dumps({"status": "error", "message": "Could not load the image URL."}))
+
+    else:
+        # Unknown – try yt-dlp first, then gallery-dl
+        ok = await _try_ytdlp(url, cookies, websocket)
+        if not ok:
+            ok = await _try_gallery_dl(url, cookies, websocket)
+        if not ok:
+            await websocket.send_text(json.dumps({"status": "error", "message": "Could not detect media. The URL may be a direct file, private, or unsupported."}))
+
+essage": str(e)}))
 
 async def run_downloader(url, quality, mode, format_ext, filename, save_path, cookies, websocket, cancellation_event):
     manager = DownloadManager(websocket, cancellation_event)
@@ -367,10 +541,6 @@ async def run_downloader(url, quality, mode, format_ext, filename, save_path, co
         })
     else:
         ydl_opts['merge_output_format'] = format_ext
-        postprocessors.append({
-            'key': 'FFmpegVideoConvertor',
-            'preferedformat': format_ext
-        })
 
     # Add Metadata and Embed Thumbnail
     postprocessors.append({'key': 'FFmpegMetadata', 'add_chapters': True})

@@ -68,6 +68,7 @@ export const htmlTemplate = `
                         <button class="mode-tab active" data-mode="merge">Video + Audio</button>
                         <button class="mode-tab" data-mode="video">Video Only</button>
                         <button class="mode-tab" data-mode="audio">Audio Only</button>
+                        <button class="mode-tab" data-mode="image" title="Uses gallery-dl for images/media">Image/Gallery</button>
                     </div>
                 </div>
 
