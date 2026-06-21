@@ -342,6 +342,15 @@ function connectWS() {
                     // Image/Gallery mode
                     currentMode = 'image';
                     
+                    // Hide video/audio tabs, show only image tab
+                    modeTabs.forEach(t => {
+                        if (t.dataset.mode === 'image') {
+                            t.style.display = 'block';
+                        } else {
+                            t.style.display = 'none';
+                        }
+                    });
+                    
                     filenameInput.value = helpers.sanitize(data.title || 'image');
                     updateModeFormatOptions();
                     
@@ -355,6 +364,15 @@ function connectWS() {
                     // Video/Audio mode
                     const activeTab = shadow.querySelector('.mode-tab.active');
                     currentMode = (activeTab && activeTab.dataset.mode !== 'image') ? activeTab.dataset.mode : 'merge';
+                    
+                    // Show video/audio tabs, hide image tab
+                    modeTabs.forEach(t => {
+                        if (t.dataset.mode === 'image') {
+                            t.style.display = 'none';
+                        } else {
+                            t.style.display = 'block';
+                        }
+                    });
                     
                     lastResolutions = data.resolutions || [];
                     filenameInput.value = helpers.sanitize(data.title || 'video');

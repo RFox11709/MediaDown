@@ -309,19 +309,31 @@ def _classify_url(url: str) -> str:
 
 async def _try_ytdlp(url, cookies, websocket) -> bool:
     """Try yt-dlp. Returns True on success (sends formats_loaded), False on failure."""
-    try:
+    async def extract(use_cookies):
         ydl_opts = {
             'quiet': True, 'no_warnings': True, 'force_ipv4': True, 'noplaylist': True,
             'socket_timeout': 15,
             'ffmpeg_location': SCRIPT_DIR,
         }
-        cookie_file = write_cookies_txt(cookies)
-        if cookie_file:
-            ydl_opts['cookiefile'] = cookie_file
-
+        if use_cookies:
+            cookie_file = write_cookies_txt(cookies)
+            if cookie_file:
+                ydl_opts['cookiefile'] = cookie_file
+        
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             loop = asyncio.get_running_loop()
-            info = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=False))
+            return await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=False))
+
+    try:
+        info = None
+        if cookies:
+            try:
+                info = await extract(use_cookies=True)
+            except Exception:
+                pass
+        
+        if not info or not any(f.get('height') and f.get('vcodec') != 'none' for f in info.get('formats', [])):
+            info = await extract(use_cookies=False)
 
         formats = info.get('formats', [])
         resolutions = set()
@@ -336,7 +348,9 @@ async def _try_ytdlp(url, cookies, websocket) -> bool:
             "default_path": get_last_download_path()
         }))
         return True
-    except Exception:
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         return False
 
 async def _try_gallery_dl(url, cookies, websocket) -> bool:
@@ -527,10 +541,6 @@ async def run_downloader(url, quality, mode, format_ext, filename, save_path, co
     }
 
     # Initialize Post Processors
-    cookie_file = write_cookies_txt(cookies)
-    if cookie_file:
-        ydl_opts['cookiefile'] = cookie_file
-
     postprocessors = []
 
     if mode == "audio":
@@ -555,9 +565,27 @@ async def run_downloader(url, quality, mode, format_ext, filename, save_path, co
             "speed": "-", "eta": "-", "size": "-"
         }))
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, lambda: ydl.download([url]))
+        async def do_download(use_cookies):
+            opts = ydl_opts.copy()
+            if use_cookies:
+                cookie_file = write_cookies_txt(cookies)
+                if cookie_file:
+                    opts['cookiefile'] = cookie_file
+            else:
+                opts.pop('cookiefile', None)
+
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, lambda: ydl.download([url]))
+
+        try:
+            await do_download(use_cookies=bool(cookies))
+        except Exception as e:
+            if cookies:
+                # Fallback to no cookies
+                await do_download(use_cookies=False)
+            else:
+                raise e
         
         if not cancellation_event.is_set():
             await websocket.send_text(json.dumps({"status": "finished", "location": save_path}))
