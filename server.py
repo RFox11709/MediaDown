@@ -488,7 +488,7 @@ async def run_downloader(url, quality, mode, format_ext, filename, save_path, co
                 return subprocess.run(cmd, capture_output=True, text=True)
             
             # Run gallery-dl in a separate thread so it doesn't block the async event loop
-            task = asyncio.create_task(loop.run_in_executor(None, run_gallery_dl))
+            task = loop.run_in_executor(None, run_gallery_dl)
             
             # Wait for completion or cancellation
             while not task.done():
